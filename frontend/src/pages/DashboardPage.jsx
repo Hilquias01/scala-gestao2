@@ -8,7 +8,7 @@ import SpendingByCategoryChart from '../components/charts/SpendingByCategoryChar
 import RevenueVsExpensesChart from '../components/charts/RevenueVsExpensesChart';
 import CostsPerVehicleChart from '../components/charts/CostsPerVehicleChart';
 import Top5VehiclesChart from '../components/charts/Top5VehiclesChart';
-
+ // Testando a integração com Git
 const kpiCardStyles = {
   backgroundColor: "white",
   padding: "1.5rem",
