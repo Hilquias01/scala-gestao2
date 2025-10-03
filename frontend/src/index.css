@@ -1,0 +1,94 @@
+/* Importação das Fontes do Google */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Roboto:wght@400;500&display=swap');
+
+:root {
+  --azul-scala: #2A4161;
+  --amarelo-ouro: #D4A017;
+  --cinza-fundo: #F4F6F9;
+  --texto-principal: #333333;
+  --branco: #FFFFFF;
+  --verde-sucesso: #28A745;
+  --vermelho-erro: #DC3545;
+  --sombra-card: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Roboto', sans-serif;
+  background-color: var(--cinza-fundo);
+  color: var(--texto-principal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Montserrat', sans-serif;
+  color: var(--azul-scala);
+}
+
+/* Estilos para Formulários (reutilizáveis) */
+.form-container {
+  background-color: var(--branco);
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: var(--sombra-card);
+  max-width: 400px;
+  margin: 4rem auto;
+}
+
+.form-title {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box; /* Garante que padding não afete a largura total */
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 4px;
+  color: var(--branco);
+  background-color: var(--azul-scala);
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn:hover {
+  background-color: #1e3048;
+}
+
+.error-message {
+  color: var(--vermelho-erro);
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.auth-link {
+  text-align: center;
+  margin-top: 1rem;
+}
+.auth-link a {
+  color: var(--azul-scala);
+  text-decoration: none;
+  font-weight: 500;
+}
