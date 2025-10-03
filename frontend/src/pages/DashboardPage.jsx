@@ -16,7 +16,8 @@ const kpiCardStyles = {
   boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
   textAlign: "center",
 };
-const kpiValueStyles = {
+const kpiValueStyles = 
+{
   fontSize: "2.5rem",
   fontWeight: "bold",
   color: "var(--azul-scala)",
