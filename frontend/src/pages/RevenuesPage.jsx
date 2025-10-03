@@ -80,6 +80,7 @@ const RevenuesPage = () => {
           <tr style={{ backgroundColor: 'var(--azul-scala)', color: 'var(--branco)' }}>
             <th style={{ padding: '0.75rem' }}>Data</th>
             <th style={{ padding: '0.75rem' }}>Descrição</th>
+            <th style={{ padding: '0.75rem' }}>Responsável</th>
             <th style={{ padding: '0.75rem' }}>Veículo Associado</th>
             <th style={{ padding: '0.75rem' }}>Valor</th>
             <th style={{ padding: '0.75rem' }}>Ações</th>
@@ -90,6 +91,7 @@ const RevenuesPage = () => {
             <tr key={revenue.id} style={{ borderBottom: '1px solid #ddd', textAlign: 'center' }}>
               <td>{new Date(revenue.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
               <td>{revenue.description}</td>
+              <td>{revenue.Employee?.name || 'N/A'}</td>
               <td>{revenue.Vehicle ? `${revenue.Vehicle.plate} - ${revenue.Vehicle.model}` : 'N/A'}</td>
               <td>R$ {revenue.amount}</td>
               <td>

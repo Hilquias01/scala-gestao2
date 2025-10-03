@@ -7,26 +7,30 @@ const modalStyles = {
 };
 
 const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
-  const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', vehicle_id: '' });
+  const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', vehicle_id: '', employee_id: '' });
   const [vehicles, setVehicles] = useState([]);
+  const [employees, setEmployees] = useState([]); // State para os funcionários
 
   useEffect(() => {
-    // Busca a lista de veículos para preencher o dropdown
     if (isOpen) {
-      const fetchVehicles = async () => {
+      // Busca veículos E funcionários quando o modal abre
+      const fetchData = async () => {
         try {
-          const { data } = await api.get('/vehicles');
-          setVehicles(data);
-        } catch (error) { console.error("Falha ao carregar veículos", error); }
+          const [vehiclesRes, employeesRes] = await Promise.all([
+            api.get('/vehicles'),
+            api.get('/employees')
+          ]);
+          setVehicles(vehiclesRes.data);
+          setEmployees(employeesRes.data);
+        } catch (error) { console.error("Falha ao carregar dados", error); }
       };
-      fetchVehicles();
+      fetchData();
     }
     
-    // Preenche o formulário para edição ou limpa para criação
     if (revenue) {
-      setFormData({ date: revenue.date, description: revenue.description, amount: revenue.amount, vehicle_id: revenue.vehicle_id || '' });
+      setFormData({ date: revenue.date, description: revenue.description, amount: revenue.amount, vehicle_id: revenue.vehicle_id || '', employee_id: revenue.employee_id || '' });
     } else {
-      setFormData({ date: new Date().toISOString().split('T')[0], description: '', amount: '', vehicle_id: '' });
+      setFormData({ date: new Date().toISOString().split('T')[0], description: '', amount: '', vehicle_id: '', employee_id: '' });
     }
   }, [revenue, isOpen]);
 
@@ -39,6 +43,10 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!formData.employee_id) { // Validação
+      alert('Por favor, selecione o funcionário responsável.');
+      return;
+    }
     onSave(formData);
   };
 
@@ -50,13 +58,20 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
           <div className="form-group"><label>Data</label><input type="date" name="date" value={formData.date} onChange={handleChange} required /></div>
           <div className="form-group"><label>Descrição</label><input name="description" value={formData.description} onChange={handleChange} required /></div>
           <div className="form-group"><label>Valor (R$)</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required /></div>
+           <div className="form-group">
+            <label>Funcionário Responsável</label>
+            <select name="employee_id" value={formData.employee_id} onChange={handleChange} required>
+              <option value="">Selecione um funcionário</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="form-group">
             <label>Vincular a um Veículo (Opcional)</label>
             <select name="vehicle_id" value={formData.vehicle_id} onChange={handleChange}>
               <option value="">Nenhum</option>
-              {vehicles.map(v => (
-                <option key={v.id} value={v.id}>{v.plate} - {v.model}</option>
-              ))}
+              {vehicles.map(v => ( <option key={v.id} value={v.id}>{v.plate} - {v.model}</option> ))}
             </select>
           </div>
           <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>

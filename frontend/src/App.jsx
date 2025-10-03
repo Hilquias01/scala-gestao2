@@ -18,6 +18,7 @@ import VehicleDetailPage from "./pages/VehicleDetailPage";
 import EmployeeListPage from "./pages/EmployeeListPage";
 import GeneralExpensesPage from "./pages/GeneralExpensesPage";
 import RevenuesPage from './pages/RevenuesPage';
+import ReportsPage from './pages/ReportsPage'; // <-- Importação que faltava
 
 function App() {
   return (
@@ -36,16 +37,16 @@ function App() {
               </ProtectedRoute>
             }
           >
-            {/* CORREÇÃO 1: Movendo as rotas de frota para dentro do Layout */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/fleet" element={<VehicleListPage />} />
             <Route path="/vehicle/:id" element={<VehicleDetailPage />} />
             <Route path="/personnel" element={<EmployeeListPage />} />
             <Route path="/expenses" element={<GeneralExpensesPage />} />
             <Route path="/revenues" element={<RevenuesPage />} />
+            <Route path="/reports" element={<ReportsPage />} /> {/* <-- Rota que faltava */}
           </Route>
 
-          {/* CORREÇÃO 2: A rota padrão agora leva para o dashboard */}
+          {/* Rota padrão leva para o dashboard (se logado) ou login (se não logado) */}
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
       </AuthProvider>
