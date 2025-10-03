@@ -18,10 +18,10 @@ db.Revenue = require('./revenue.model.js')(sequelize);
 // Futuramente, as associações (relacionamentos) serão definidas aqui.
 db.Vehicle.hasMany(db.Refueling, { foreignKey: 'vehicle_id' });
 db.Refueling.belongsTo(db.Vehicle, { foreignKey: 'vehicle_id' });
-
 db.Employee.hasMany(db.Refueling, { foreignKey: 'employee_id' });
 db.Refueling.belongsTo(db.Employee, { foreignKey: 'employee_id' });
-
+db.Employee.hasMany(db.Revenue, { foreignKey: 'employee_id' });
+db.Revenue.belongsTo(db.Employee, { foreignKey: 'employee_id' });
 db.Vehicle.hasMany(db.Maintenance, { foreignKey: 'vehicle_id' });
 db.Maintenance.belongsTo(db.Vehicle, { foreignKey: 'vehicle_id' });
 db.Vehicle.hasMany(db.Revenue, { foreignKey: 'vehicle_id' });

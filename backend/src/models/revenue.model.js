@@ -19,6 +19,10 @@ module.exports = (sequelize) => {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
+    employee_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false, // Tornando obrigatório, como no abastecimento
+    },
     vehicle_id: {
       type: DataTypes.INTEGER,
       allowNull: true, // A associação com um veículo é opcional

@@ -20,10 +20,11 @@ app.use('/api/auth', require('./src/routes/auth.routes'));
 app.use('/api/vehicles', require('./src/routes/vehicle.routes'));
 app.use('/api/employees', require('./src/routes/employee.routes'));
 app.use('/api/refuelings', require('./src/routes/refueling.routes.js'));
-app.use('/api/dashboard', require('./src/routes/dashboard.routes.js')); 
 app.use('/api/maintenances', require('./src/routes/maintenance.routes.js'));
 app.use('/api/general-expenses', require('./src/routes/generalExpense.routes.js'));
 app.use('/api/revenues', require('./src/routes/revenue.routes.js'));
+app.use('/api/dashboard', require('./src/routes/dashboard.routes.js')); // Adicionando a rota que faltava
+app.use('/api/reports', require('./src/routes/report.routes.js'));
 
 
 const PORT = process.env.PORT || 5000;
@@ -35,7 +36,7 @@ async function startServer() {
     await db.sequelize.authenticate();
     console.log('✅ Conexão com o banco de dados estabelecida com sucesso.');
 
-    // Sincroniza os modelos. Em produção, considere usar Migrations.
+    // Modo seguro para operação diária.
     await db.sequelize.sync({ force: false });
     console.log('✅ Todos os modelos foram sincronizados com sucesso.');
 
@@ -49,3 +50,5 @@ async function startServer() {
 }
 
 startServer();
+
+  
