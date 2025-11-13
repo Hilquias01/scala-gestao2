@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./src/models'); // Importa o db object do models/index.js
+const db = require('./src/models'); // Importa a instância do Sequelize
 
 const app = express();
 
@@ -10,7 +10,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rota de teste
+// ======================================================
+// 🔍 ROTA DE TESTE BÁSICA
+// ======================================================
 app.get('/', (req, res) => {
   res.json({ message: 'Bem-vindo à API do Scala Gestão! Ambiente Profissional.' });
 });
@@ -50,5 +52,3 @@ async function startServer() {
 }
 
 startServer();
-
-  

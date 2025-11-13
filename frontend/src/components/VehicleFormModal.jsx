@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { IMaskInput } from 'react-imask'; // Import the mask component
+import { IMaskInput } from 'react-imask'; // Usando a biblioteca de máscara correta
 
-// Estilos CSS para o modal (adicionados diretamente para simplicidade)
 const modalStyles = {
   overlay: {
     position: 'fixed',
@@ -13,6 +12,7 @@ const modalStyles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1000,
   },
   content: {
     backgroundColor: 'white',
@@ -30,25 +30,29 @@ const VehicleFormModal = ({ isOpen, onClose, onSave, vehicle }) => {
     manufacturer: '',
     year: '',
     initial_km: '',
+    renavam: '', // 1. Adicionado o campo Renavam no estado inicial
     status: 'ativo',
   });
 
-  // useEffect para preencher o formulário quando um veículo é passado para edição
   useEffect(() => {
-    if (vehicle) {
-      setFormData({
-        plate: vehicle.plate,
-        model: vehicle.model,
-        manufacturer: vehicle.manufacturer || '',
-        year: vehicle.year,
-        initial_km: vehicle.initial_km,
-        status: vehicle.status,
-      });
-    } else {
-      // Limpa o formulário se não houver veículo (modo de criação)
-      setFormData({
-        plate: '', model: '', manufacturer: '', year: '', initial_km: '', status: 'ativo',
-      });
+    if (isOpen) {
+      if (vehicle) {
+        // Preenche o formulário para edição
+        setFormData({
+          plate: vehicle.plate,
+          model: vehicle.model,
+          manufacturer: vehicle.manufacturer || '',
+          year: vehicle.year,
+          initial_km: vehicle.initial_km,
+          renavam: vehicle.renavam || '', // 2. Preenche o Renavam existente
+          status: vehicle.status,
+        });
+      } else {
+        // Limpa o formulário para criação
+        setFormData({
+          plate: '', model: '', manufacturer: '', year: '', initial_km: '', renavam: '', status: 'ativo',
+        });
+      }
     }
   }, [vehicle, isOpen]);
 
@@ -73,7 +77,6 @@ const VehicleFormModal = ({ isOpen, onClose, onSave, vehicle }) => {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Placa</label>
-            {/* ## MASK ADDED HERE ## */}
             <IMaskInput
               mask={/^[A-Z0-9]{0,7}$/}
               prepare={(str) => str.toUpperCase()}
@@ -81,7 +84,7 @@ const VehicleFormModal = ({ isOpen, onClose, onSave, vehicle }) => {
               onAccept={(value) => handleChange({ target: { name: 'plate', value } })}
               placeholder="AAA0A00"
               required
-              style={{ width: '100%', padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              style={{ width: '100%', padding: '0.75rem', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}
             />
           </div>
           <div className="form-group">
@@ -92,6 +95,19 @@ const VehicleFormModal = ({ isOpen, onClose, onSave, vehicle }) => {
             <label>Fabricante</label>
             <input name="manufacturer" value={formData.manufacturer} onChange={handleChange} />
           </div>
+
+          {/* 3. Campo Renavam adicionado ao formulário */}
+          <div className="form-group">
+            <label>Renavam (11 dígitos)</label>
+            <input 
+              type="text" 
+              name="renavam" 
+              value={formData.renavam} 
+              onChange={handleChange} 
+              maxLength="11" 
+            />
+          </div>
+
           <div className="form-group">
             <label>Ano</label>
             <input type="number" name="year" value={formData.year} onChange={handleChange} required />

@@ -1,10 +1,11 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api', // URL base da sua API
+  // Voltando para localhost, pois os dois servidores rodarão na mesma máquina
+  baseURL: 'http://localhost:5000/api', 
 });
 
-// Interceptor para adicionar o token a todas as requisições
+// ... (o resto do arquivo continua igual)
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');

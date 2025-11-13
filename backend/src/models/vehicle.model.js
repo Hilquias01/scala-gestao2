@@ -18,6 +18,7 @@ module.exports = (sequelize) => {
     },
     manufacturer: {
       type: DataTypes.STRING,
+      allowNull: true,
     },
     year: {
       type: DataTypes.INTEGER,
@@ -26,6 +27,10 @@ module.exports = (sequelize) => {
     initial_km: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
+    },
+    renavam: {
+      type: DataTypes.STRING(11), // 11 dígitos do Renavam
+      allowNull: true,
     },
     status: {
       type: DataTypes.ENUM('ativo', 'inativo', 'manutencao'),

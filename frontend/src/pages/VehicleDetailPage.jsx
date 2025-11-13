@@ -120,6 +120,7 @@ const VehicleDetailPage = () => {
       <div style={{ backgroundColor: 'white', padding: '1rem', borderRadius: '8px', margin: '1rem 0' }}>
         <h1>{vehicle.model} - {vehicle.plate}</h1>
         <p><strong>Fabricante:</strong> {vehicle.manufacturer} | <strong>Ano:</strong> {vehicle.year} | <strong>KM Inicial:</strong> {vehicle.initial_km}</p>
+        <p><strong>Renavam:</strong> {vehicle.renavam || 'Não cadastrado'}</p>
       </div>
 
       {isAdmin && (
