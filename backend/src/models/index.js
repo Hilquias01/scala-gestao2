@@ -10,6 +10,7 @@ db.sequelize = sequelize;
 db.User = require('./user.model.js')(sequelize);
 db.Vehicle = require('./vehicle.model.js')(sequelize);
 db.Employee = require('./employee.model.js')(sequelize);
+db.EmployeeSalary = require('./employeeSalary.model.js')(sequelize);
 db.Refueling = require('./refueling.model.js')(sequelize);
 db.Maintenance = require('./maintenance.model.js')(sequelize);
 db.GeneralExpense = require('./generalExpense.model.js')(sequelize);
@@ -26,5 +27,7 @@ db.Vehicle.hasMany(db.Maintenance, { foreignKey: 'vehicle_id' });
 db.Maintenance.belongsTo(db.Vehicle, { foreignKey: 'vehicle_id' });
 db.Vehicle.hasMany(db.Revenue, { foreignKey: 'vehicle_id' });
 db.Revenue.belongsTo(db.Vehicle, { foreignKey: 'vehicle_id' });
+db.Employee.hasMany(db.EmployeeSalary, { foreignKey: 'employee_id', as: 'salaries' });
+db.EmployeeSalary.belongsTo(db.Employee, { foreignKey: 'employee_id', as: 'employee' });
 
 module.exports = db;

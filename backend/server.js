@@ -21,6 +21,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', require('./src/routes/auth.routes'));
 app.use('/api/vehicles', require('./src/routes/vehicle.routes'));
 app.use('/api/employees', require('./src/routes/employee.routes'));
+app.use('/api/employee-salaries', require('./src/routes/employeeSalary.routes'));
 app.use('/api/refuelings', require('./src/routes/refueling.routes.js'));
 app.use('/api/maintenances', require('./src/routes/maintenance.routes.js'));
 app.use('/api/general-expenses', require('./src/routes/generalExpense.routes.js'));

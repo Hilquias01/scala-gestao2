@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import EmployeeFormModal from '../components/EmployeeFormModal';
-import EmployeeSalaryModal from '../components/EmployeeSalaryModal';
 
 // 1. Importações do Material-UI
 import IconButton from '@mui/material/IconButton';
@@ -16,7 +15,6 @@ const EmployeeListPage = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
-  const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
 
   const isAdmin = isAuthenticated && user?.role === 'administrador';
 
@@ -74,17 +72,6 @@ const EmployeeListPage = () => {
     }
   };
 
-  const handleSaveSalary = async ({ employeeId, salary }) => {
-    try {
-      await api.put(`/employees/${employeeId}`, { salary: parseFloat(salary) });
-      fetchEmployees();
-      setIsSalaryModalOpen(false);
-    } catch (err) {
-      console.error('Falha ao salvar salário:', err);
-      alert('Erro ao salvar salário.');
-    }
-  };
-
   if (loading) return <div>Carregando pessoal...</div>;
 
   return (
@@ -95,9 +82,6 @@ const EmployeeListPage = () => {
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           <button className="btn" onClick={() => handleOpenModal()} style={{ maxWidth: '250px' }}>
             Adicionar Funcionário
-          </button>
-          <button className="btn" onClick={() => setIsSalaryModalOpen(true)} style={{ maxWidth: '250px', backgroundColor: '#4CAF50' }}>
-            Vincular Salário
           </button>
         </div>
       )}
@@ -144,13 +128,6 @@ const EmployeeListPage = () => {
         onClose={handleCloseModal}
         onSave={handleSaveEmployee}
         employee={editingEmployee}
-      />
-
-      <EmployeeSalaryModal
-        isOpen={isSalaryModalOpen}
-        onClose={() => setIsSalaryModalOpen(false)}
-        employees={employees}
-        onSave={handleSaveSalary}
       />
     </div>
   );

@@ -86,6 +86,14 @@ const Navbar = () => {
           </li>
           <li>
             <NavLink 
+              to="/salaries" 
+              style={({ isActive }) => ({ ...navStyles.navLink, ...(isActive ? activeLinkStyle : {}) })}
+            >
+              Salarios
+            </NavLink>
+          </li>
+          <li>
+            <NavLink 
               to="/expenses" 
               style={({ isActive }) => ({ ...navStyles.navLink, ...(isActive ? activeLinkStyle : {}) })}
             >
