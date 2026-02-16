@@ -1,7 +1,44 @@
+const fs = require('fs');
+const path = require('path');
 const puppeteer = require('puppeteer');
 const { Op } = require('sequelize');
 const { Vehicle, Refueling, Maintenance, Employee, Revenue, GeneralExpense } = require('../models');
 const { format, parseISO, eachDayOfInterval, isSameDay } = require('date-fns');
+
+const COMPANY_INFO = {
+  name: 'Scala Gestao',
+  cnpj: '26.236.212/0001-66',
+  addressLine: 'Avenida Praia do Amapa, 3355',
+  cityLine: 'CEP 69906640 - Rio Branco - AC',
+  phone: '(68) 99229-3111',
+};
+
+const LOGO_PATH = path.resolve(__dirname, '..', '..', '..', 'frontend', 'public', 'Logo_scala_corrigido.png');
+let cachedLogoDataUri;
+const getLogoDataUri = () => {
+  if (cachedLogoDataUri !== undefined) return cachedLogoDataUri;
+  try {
+    const file = fs.readFileSync(LOGO_PATH);
+    cachedLogoDataUri = `data:image/png;base64,${file.toString('base64')}`;
+  } catch (error) {
+    cachedLogoDataUri = null;
+  }
+  return cachedLogoDataUri;
+};
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const numberFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const integerFormatter = new Intl.NumberFormat('pt-BR');
+
+const toNumber = (value) => {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatCurrency = (value) => currencyFormatter.format(toNumber(value));
+const formatNumber = (value) => numberFormatter.format(toNumber(value));
+const formatInteger = (value) => integerFormatter.format(Math.trunc(toNumber(value)));
+const formatPercent = (value) => `${formatNumber(toNumber(value) * 100)}%`;
 
 /**
  * Controller para gerar um relatório completo e otimizado da frota em PDF.
@@ -28,10 +65,10 @@ exports.generateReport = async (req, res) => {
     // =================================================================
 
     // --- RESUMO FINANCEIRO GERAL ---
-    const totalRevenue = revenues.reduce((sum, r) => sum + parseFloat(r.amount), 0);
-    const refuelingCost = refuelings.reduce((sum, r) => sum + parseFloat(r.total_cost), 0);
-    const maintenanceCost = maintenances.reduce((sum, m) => sum + parseFloat(m.cost), 0);
-    const generalExpenseCost = generalExpenses.reduce((sum, g) => sum + parseFloat(g.amount), 0);
+    const totalRevenue = revenues.reduce((sum, r) => sum + toNumber(r.amount), 0);
+    const refuelingCost = refuelings.reduce((sum, r) => sum + toNumber(r.total_cost), 0);
+    const maintenanceCost = maintenances.reduce((sum, m) => sum + toNumber(m.cost), 0);
+    const generalExpenseCost = generalExpenses.reduce((sum, g) => sum + toNumber(g.amount), 0);
     const totalExpenses = refuelingCost + maintenanceCost + generalExpenseCost;
     const netResult = totalRevenue - totalExpenses;
 
@@ -39,14 +76,14 @@ exports.generateReport = async (req, res) => {
     const dailyBreakdown = [];
     const interval = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
     for (const day of interval) {
-        const dailyRevenue = revenues.filter(r => isSameDay(parseISO(r.date), day)).reduce((sum, r) => sum + parseFloat(r.amount), 0);
-        const dailyRefueling = refuelings.filter(r => isSameDay(parseISO(r.date), day)).reduce((sum, r) => sum + parseFloat(r.total_cost), 0);
-        const dailyMaintenance = maintenances.filter(m => isSameDay(parseISO(m.date), day)).reduce((sum, m) => sum + parseFloat(m.cost), 0);
-        const dailyGeneral = generalExpenses.filter(g => isSameDay(parseISO(g.date), day)).reduce((sum, g) => sum + parseFloat(g.amount), 0);
+        const dailyRevenue = revenues.filter(r => isSameDay(parseISO(r.date), day)).reduce((sum, r) => sum + toNumber(r.amount), 0);
+        const dailyRefueling = refuelings.filter(r => isSameDay(parseISO(r.date), day)).reduce((sum, r) => sum + toNumber(r.total_cost), 0);
+        const dailyMaintenance = maintenances.filter(m => isSameDay(parseISO(m.date), day)).reduce((sum, m) => sum + toNumber(m.cost), 0);
+        const dailyGeneral = generalExpenses.filter(g => isSameDay(parseISO(g.date), day)).reduce((sum, g) => sum + toNumber(g.amount), 0);
         dailyBreakdown.push({
             date: format(day, 'dd/MM'),
-            revenue: dailyRevenue.toFixed(2),
-            expenses: (dailyRefueling + dailyMaintenance + dailyGeneral).toFixed(2)
+            revenue: dailyRevenue,
+            expenses: (dailyRefueling + dailyMaintenance + dailyGeneral)
         });
     }
 
@@ -58,25 +95,25 @@ exports.generateReport = async (req, res) => {
         const vRefuelings = refuelings.filter(r => r.vehicle_id === vehicle.id).sort((a,b) => a.vehicle_km - b.vehicle_km);
         const vMaintenances = maintenances.filter(m => m.vehicle_id === vehicle.id);
 
-        const kmDriven = vRefuelings.length > 1 ? parseFloat(vRefuelings[vRefuelings.length - 1].vehicle_km) - parseFloat(vRefuelings[0].vehicle_km) : 0;
-        const totalLiters = vRefuelings.reduce((sum, r) => sum + parseFloat(r.liters), 0);
+        const kmDriven = vRefuelings.length > 1 ? toNumber(vRefuelings[vRefuelings.length - 1].vehicle_km) - toNumber(vRefuelings[0].vehicle_km) : 0;
+        const totalLiters = vRefuelings.reduce((sum, r) => sum + toNumber(r.liters), 0);
         const avgKmL = kmDriven > 0 && totalLiters > 0 ? (kmDriven / totalLiters) : 0;
-        const vTotalRefuelingCost = vRefuelings.reduce((sum, r) => sum + parseFloat(r.total_cost), 0);
-        const vTotalMaintenanceCost = vMaintenances.reduce((sum, m) => sum + parseFloat(m.cost), 0);
+        const vTotalRefuelingCost = vRefuelings.reduce((sum, r) => sum + toNumber(r.total_cost), 0);
+        const vTotalMaintenanceCost = vMaintenances.reduce((sum, m) => sum + toNumber(m.cost), 0);
         const vTotalCost = vTotalRefuelingCost + vTotalMaintenanceCost;
-        const vTotalRevenue = vRevenues.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+        const vTotalRevenue = vRevenues.reduce((sum, r) => sum + toNumber(r.amount), 0);
         
         if (vTotalCost > 0 || vTotalRevenue > 0) {
             fleetTotalKmDriven += kmDriven;
             vehicleAnalysis.push({
                 plate: vehicle.plate, model: vehicle.model,
-                kmDriven: kmDriven.toFixed(2),
-                avgKmL: avgKmL.toFixed(2),
-                totalCost: vTotalCost.toFixed(2),
-                totalRevenue: vTotalRevenue.toFixed(2),
-                balance: (vTotalRevenue - vTotalCost).toFixed(2),
-                costPerKm: kmDriven > 0 ? (vTotalCost / kmDriven).toFixed(2) : '0.00',
-                revenuePerKm: kmDriven > 0 ? (vTotalRevenue / kmDriven).toFixed(2) : '0.00',
+                kmDriven,
+                avgKmL,
+                totalCost: vTotalCost,
+                totalRevenue: vTotalRevenue,
+                balance: (vTotalRevenue - vTotalCost),
+                costPerKm: kmDriven > 0 ? (vTotalCost / kmDriven) : 0,
+                revenuePerKm: kmDriven > 0 ? (vTotalRevenue / kmDriven) : 0,
                 maintenanceCount: vMaintenances.length,
             });
         }
@@ -86,40 +123,81 @@ exports.generateReport = async (req, res) => {
     const employeeAnalysis = [];
     for (const employee of employees) {
         const eRevenues = revenues.filter(r => r.employee_id === employee.id);
-        const totalRevenueGenerated = eRevenues.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+        const totalRevenueGenerated = eRevenues.reduce((sum, r) => sum + toNumber(r.amount), 0);
         const tripsCount = eRevenues.length;
 
         const dailyRevenues = {};
         eRevenues.forEach(r => {
             const day = format(parseISO(r.date), 'dd/MM/yyyy');
-            dailyRevenues[day] = (dailyRevenues[day] || 0) + parseFloat(r.amount);
+            dailyRevenues[day] = (dailyRevenues[day] || 0) + toNumber(r.amount);
         });
 
         if (tripsCount > 0) {
             employeeAnalysis.push({
                 name: employee.name,
-                totalRevenue: totalRevenueGenerated.toFixed(2),
+                totalRevenue: totalRevenueGenerated,
                 tripsCount,
-                avgRevenuePerTrip: (totalRevenueGenerated / tripsCount).toFixed(2),
-                dailyRevenues: Object.entries(dailyRevenues).map(([date, amount]) => ({date, amount: amount.toFixed(2)})).sort((a,b) => new Date(a.date.split('/').reverse().join('-')) - new Date(b.date.split('/').reverse().join('-')))
+                avgRevenuePerTrip: (totalRevenueGenerated / tripsCount),
+                dailyRevenues: Object.entries(dailyRevenues).map(([date, amount]) => ({date, amount})).sort((a,b) => new Date(a.date.split('/').reverse().join('-')) - new Date(b.date.split('/').reverse().join('-')))
             });
         }
     }
 
     // --- RANKINGS (TOP 5) ---
-    const topVehiclesCost = [...vehicleAnalysis].sort((a, b) => parseFloat(b.totalCost) - parseFloat(a.totalCost)).slice(0, 5);
-    const topVehiclesRevenue = [...vehicleAnalysis].sort((a, b) => parseFloat(b.totalRevenue) - parseFloat(a.totalRevenue)).slice(0, 5);
-    const topVehiclesBalance = [...vehicleAnalysis].sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance)).slice(0, 5);
-    const topVehiclesEconomy = [...vehicleAnalysis].filter(v => v.avgKmL > 0).sort((a, b) => parseFloat(b.avgKmL) - parseFloat(a.avgKmL)).slice(0, 5);
-    const topEmployeesRevenue = [...employeeAnalysis].sort((a, b) => parseFloat(b.totalRevenue) - parseFloat(a.totalRevenue)).slice(0, 5);
+    const topVehiclesCost = [...vehicleAnalysis].sort((a, b) => b.totalCost - a.totalCost).slice(0, 5);
+    const topVehiclesRevenue = [...vehicleAnalysis].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 5);
+    const topVehiclesBalance = [...vehicleAnalysis].sort((a, b) => b.balance - a.balance).slice(0, 5);
+    const topVehiclesEconomy = [...vehicleAnalysis].filter(v => v.avgKmL > 0).sort((a, b) => b.avgKmL - a.avgKmL).slice(0, 5);
+    const topEmployeesRevenue = [...employeeAnalysis].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 5);
+
+    const expenseCategories = [
+      { label: 'Combustivel', value: refuelingCost },
+      { label: 'Manutencao', value: maintenanceCost },
+      { label: 'Despesas Gerais', value: generalExpenseCost },
+    ];
+    const topExpenseCategory = expenseCategories.reduce((max, current) => {
+      return current.value > max.value ? current : max;
+    }, expenseCategories[0]);
 
     // =================================================================
     // 3. MONTAGEM DO OBJETO FINAL PARA O HTML
     // =================================================================
     const reportData = {
-        financialSummary: { totalRevenue: totalRevenue.toFixed(2), totalExpenses: totalExpenses.toFixed(2), netResult: netResult.toFixed(2), margin: totalRevenue > 0 ? ((netResult / totalRevenue) * 100).toFixed(2) : '0.00' },
-        kpis: { fleetAvgCostPerKm: fleetTotalKmDriven > 0 ? (totalExpenses / fleetTotalKmDriven).toFixed(2) : '0.00', totalTrips: revenues.length, avgRevenuePerTrip: revenues.length > 0 ? (totalRevenue / revenues.length).toFixed(2) : '0.00' },
-        chartData: { pie: [refuelingCost.toFixed(2), maintenanceCost.toFixed(2), generalExpenseCost.toFixed(2)], bar: [totalRevenue.toFixed(2), totalExpenses.toFixed(2)], line: dailyBreakdown },
+        company: {
+            ...COMPANY_INFO,
+            logoDataUri: getLogoDataUri(),
+        },
+        financialSummary: {
+            totalRevenue,
+            totalExpenses,
+            netResult,
+            margin: totalRevenue > 0 ? (netResult / totalRevenue) : 0
+        },
+        kpis: {
+            fleetAvgCostPerKm: fleetTotalKmDriven > 0 ? (totalExpenses / fleetTotalKmDriven) : 0,
+            totalTrips: revenues.length,
+            avgRevenuePerTrip: revenues.length > 0 ? (totalRevenue / revenues.length) : 0
+        },
+        recordSummary: {
+            revenues: revenues.length,
+            refuelings: refuelings.length,
+            maintenances: maintenances.length,
+            generalExpenses: generalExpenses.length,
+            vehicles: vehicles.length,
+            employees: employees.length
+        },
+        insights: {
+            topVehicleCost: topVehiclesCost[0] || null,
+            topVehicleRevenue: topVehiclesRevenue[0] || null,
+            topVehicleBalance: topVehiclesBalance[0] || null,
+            topEmployeeRevenue: topEmployeesRevenue[0] || null,
+            topExpenseCategory
+        },
+        chartData: {
+            pie: [refuelingCost, maintenanceCost, generalExpenseCost],
+            bar: [totalRevenue, totalExpenses],
+            line: dailyBreakdown
+        },
         topLists: { vehiclesCost: topVehiclesCost, vehiclesRevenue: topVehiclesRevenue, vehiclesBalance: topVehiclesBalance, vehiclesEconomy: topVehiclesEconomy, employeesRevenue: topEmployeesRevenue },
         vehicleAnalysis,
         employeeAnalysis,
@@ -129,6 +207,9 @@ exports.generateReport = async (req, res) => {
     // =================================================================
     // 4. GERAÇÃO DO PDF OTIMIZADO
     // =================================================================
+    const headerStartDate = format(parseISO(startDate), 'dd/MM/yyyy');
+    const headerEndDate = format(parseISO(endDate), 'dd/MM/yyyy');
+    const headerText = `Scala Gestao - Relatorio de Desempenho da Frota (${headerStartDate} a ${headerEndDate})`;
     const htmlContent = generateEnhancedHTML(reportData, startDate, endDate);
     const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
@@ -139,8 +220,8 @@ exports.generateReport = async (req, res) => {
         printBackground: true,
         margin: { top: '2cm', right: '1cm', bottom: '2cm', left: '1cm' },
         displayHeaderFooter: true,
-        headerTemplate: `<div style="font-size: 10px; text-align: center; width: 100%; padding: 0 1cm;">Scala Gestão - Relatório de Desempenho da Frota</div>`,
-        footerTemplate: `<div style="font-size: 10px; text-align: right; width: 100%; padding: 0 1cm;">Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>`,
+        headerTemplate: `<div style="font-size: 10px; text-align: center; width: 100%; padding: 0 1cm;">${headerText}</div>`,
+        footerTemplate: `<div style=\"font-size: 10px; text-align: right; width: 100%; padding: 0 1cm;\">Pagina <span class=\"pageNumber\"></span> de <span class=\"totalPages\"></span></div>`,
     });
     await browser.close();
 
@@ -162,146 +243,240 @@ exports.generateReport = async (req, res) => {
  * @returns {string} A string HTML completa para ser renderizada.
  */
 function generateEnhancedHTML(data, startDate, endDate) {
-    const { financialSummary, kpis, chartData, topLists, vehicleAnalysis, employeeAnalysis, detailedLists } = data;
+    const { company, financialSummary, kpis, recordSummary, insights, chartData, topLists, vehicleAnalysis, employeeAnalysis, detailedLists } = data;
     const formattedStartDate = format(parseISO(startDate), 'dd/MM/yyyy');
     const formattedEndDate = format(parseISO(endDate), 'dd/MM/yyyy');
-  
+
     const renderTable = (headers, rows) => {
-        if (!rows || rows.length === 0) return `<p class="no-data">Nenhum dado disponível para este período.</p>`;
+        if (!rows || rows.length === 0) return `<p class=\"no-data\">Nenhum dado disponivel para este periodo.</p>`;
         return `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
     };
-    
+
+    const logoHtml = company?.logoDataUri
+        ? `<img src=\"${company.logoDataUri}\" class=\"cover-logo\" />`
+        : `<div class=\"cover-name\">${company?.name || 'Empresa'}</div>`;
+
+    const watermarkHtml = company?.logoDataUri
+        ? `<div class=\"watermark\" style=\"background-image: url('${company.logoDataUri}');\"></div>`
+        : '';
+
+    const insightRows = [
+        `<tr><td>Veiculo com maior custo</td><td>${insights.topVehicleCost ? `${insights.topVehicleCost.plate} - ${formatCurrency(insights.topVehicleCost.totalCost)}` : '-'}</td></tr>`,
+        `<tr><td>Veiculo com maior receita</td><td>${insights.topVehicleRevenue ? `${insights.topVehicleRevenue.plate} - ${formatCurrency(insights.topVehicleRevenue.totalRevenue)}` : '-'}</td></tr>`,
+        `<tr><td>Veiculo mais lucrativo</td><td>${insights.topVehicleBalance ? `${insights.topVehicleBalance.plate} - ${formatCurrency(insights.topVehicleBalance.balance)}` : '-'}</td></tr>`,
+        `<tr><td>Funcionario com maior faturamento</td><td>${insights.topEmployeeRevenue ? `${insights.topEmployeeRevenue.name} - ${formatCurrency(insights.topEmployeeRevenue.totalRevenue)}` : '-'}</td></tr>`,
+        `<tr><td>Maior categoria de custo</td><td>${insights.topExpenseCategory ? `${insights.topExpenseCategory.label} - ${formatCurrency(insights.topExpenseCategory.value)}` : '-'}</td></tr>`
+    ];
+
     return `
       <html>
         <head>
-          <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+          <meta charset=\"UTF-8\">
+          <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
           <style>
-            /* ========================================= */
-            /* FONTES SIGNIFICATIVAMENTE MAIORES (VERSÃO FINAL) */
-            /* ========================================= */
-            body { font-family: Arial, sans-serif; font-size: 16px; color: #333; }
-            h1, h2, h3, h4 { color: #2A4161; margin-bottom: 0.5em; page-break-after: avoid; }
+            :root {
+              --brand-primary: #1f2c3a;
+              --brand-accent: #d4a017;
+              --brand-soft: #f8f9fb;
+              --brand-ink: #2a4161;
+              --brand-muted: #6c757d;
+            }
+            @page { size: A4 landscape; margin: 2cm 1cm; }
+            body { font-family: Arial, sans-serif; font-size: 15px; color: #333; }
+            h1, h2, h3, h4 { color: var(--brand-ink); margin-bottom: 0.5em; page-break-after: avoid; }
             h1 { text-align: center; font-size: 28px; }
-            h2 { border-bottom: 2px solid #D4A017; padding-bottom: 5px; margin-top: 35px; font-size: 24px; }
-            h3 { border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-top: 30px; font-size: 20px; }
-            h4 { font-size: 17px; margin-top: 25px; margin-bottom: 10px; font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 15px; page-break-inside: avoid; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+            h2 { border-bottom: 2px solid var(--brand-accent); padding-bottom: 5px; margin-top: 32px; font-size: 22px; }
+            h3 { border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-top: 24px; font-size: 18px; }
+            h4 { font-size: 16px; margin-top: 20px; margin-bottom: 8px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; page-break-inside: avoid; }
+            table thead { display: table-header-group; }
+            table tr { page-break-inside: avoid; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
             th { background-color: #f2f2f2; font-weight: bold; }
             tbody tr:nth-child(odd) { background-color: #f9f9f9; }
-            .header-info { text-align: center; margin-bottom: 35px; font-size: 16px; }
-            .profit { color: #28a745; font-weight: bold; } .loss { color: #dc3545; font-weight: bold; }
+            .header-info { text-align: center; margin-bottom: 24px; font-size: 15px; }
+            .profit { color: #28a745; font-weight: bold; }
+            .loss { color: #dc3545; font-weight: bold; }
             .no-data { text-align: center; color: #888; padding: 20px; font-style: italic; }
             .page-break { page-break-before: always; }
-            .kpi-container { display: flex; justify-content: space-around; text-align: center; background: #f8f9fa; padding: 20px; border-radius: 5px; margin-top: 20px; }
-            .kpi-box { flex: 1; }
-            .kpi-title { font-size: 16px; color: #6c757d; } .kpi-value { font-size: 24px; font-weight: bold; color: #2A4161; }
-            .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 25px; }
-            .chart-full { margin-top: 35px; }
-            .rankings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px 40px; }
-            
-            /* ========================================= */
-            /* LAYOUT SIMPLIFICADO PARA VEÍCULOS         */
-            /* ========================================= */
-            .vehicle-analysis-container {
-                display: grid;
-                grid-template-columns: 45% 55%; /* Colunas de tamanhos diferentes para melhor encaixe */
-                gap: 25px;
-                page-break-inside: avoid;
-                margin-top: 15px;
-                padding-top: 15px;
-                border-top: 1px solid #eee;
-            }
+            .kpi-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; text-align: center; background: var(--brand-soft); padding: 16px; border-radius: 6px; margin-top: 15px; }
+            .kpi-box { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+            .kpi-title { font-size: 13px; color: var(--brand-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+            .kpi-value { font-size: 20px; font-weight: bold; color: var(--brand-ink); margin-top: 6px; }
+            .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 12px 0; }
+            .summary-card { background: var(--brand-soft); border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+            .summary-label { font-size: 12px; color: var(--brand-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+            .summary-value { font-size: 20px; font-weight: 700; color: var(--brand-ink); margin-top: 4px; }
+            .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 20px; }
+            .chart-full { margin-top: 28px; }
+            .rankings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 32px; }
+            .vehicle-analysis-container { display: grid; grid-template-columns: 45% 55%; gap: 20px; page-break-inside: avoid; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+            canvas { max-width: 100%; height: 260px !important; }
+            .muted { color: var(--brand-muted); }
+
+            .cover { min-height: 0; display: flex; flex-direction: column; gap: 12px; border-radius: 16px; padding: 18px 24px; background: linear-gradient(140deg, #f6f8fb 0%, #ffffff 35%, #f4f6fb 100%); border: 2px solid #e5e7eb; box-sizing: border-box; page-break-inside: avoid; break-inside: avoid; }
+            .cover-brand { text-align: center; }
+            .cover-logo { max-width: 180px; width: auto; height: auto; margin: 0 auto 8px; display: block; object-fit: contain; }
+            .cover-name { font-size: 24px; font-weight: 700; color: var(--brand-ink); }
+            .cover-title { text-align: center; font-size: 22px; font-weight: 700; color: var(--brand-ink); margin-top: 6px; }
+            .cover-period { text-align: center; font-size: 13px; color: var(--brand-muted); margin-top: 4px; }
+            .cover-box { margin-top: 12px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; background: #ffffff; box-shadow: 0 6px 16px rgba(31, 44, 58, 0.05); }
+            .cover-box div { margin: 3px 0; font-size: 12px; }
+            .cover-footer { text-align: center; color: var(--brand-muted); font-size: 12px; margin-top: 6px; }
+            .cover-bar { height: 4px; width: 80px; background: var(--brand-accent); margin: 8px auto 0; border-radius: 999px; }
+
+            .toc { padding: 20px 10px; }
+            .toc ol { margin: 0; padding-left: 24px; }
+            .toc li { margin: 10px 0; font-size: 16px; }
+
+            .watermark { position: fixed; top: 50%; left: 50%; width: 85%; height: 85%; transform: translate(-50%, -50%); opacity: 0.1; background-repeat: no-repeat; background-position: center; background-size: contain; pointer-events: none; z-index: 0; }
+            .content-layer { position: relative; z-index: 1; }
           </style>
         </head>
         <body>
-          <div class="header-info">
-            <h1>Relatório de Desempenho da Frota</h1>
-            <p>Período: ${formattedStartDate} a ${formattedEndDate}</p>
-            <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-          </div>
-  
-          <h2>Painel Geral</h2>
-          <h3>Resumo Financeiro</h3>
-          ${renderTable( ['Receita Total', 'Despesas Totais', 'Resultado Líquido', 'Margem de Lucro'], [`<tr><td class="profit">R$ ${financialSummary.totalRevenue}</td><td class="loss">R$ ${financialSummary.totalExpenses}</td><td class="${financialSummary.netResult >= 0 ? 'profit' : 'loss'}">R$ ${financialSummary.netResult}</td><td>${financialSummary.margin}%</td></tr>`])}
-          <h3>Indicadores Chave de Desempenho (KPIs)</h3>
-          <div class="kpi-container">
-            <div class="kpi-box"><div class="kpi-title">Custo Médio / KM (Frota)</div><div class="kpi-value">R$ ${kpis.fleetAvgCostPerKm}</div></div>
-            <div class="kpi-box"><div class="kpi-title">Total de Viagens</div><div class="kpi-value">${kpis.totalTrips}</div></div>
-            <div class="kpi-box"><div class="kpi-title">Receita Média / Viagem</div><div class="kpi-value">R$ ${kpis.avgRevenuePerTrip}</div></div>
-          </div>
-          <h3>Visualização Gráfica</h3>
-          <div class="chart-grid">
-              <canvas id="expensesChart"></canvas>
-              <canvas id="revenueChart"></canvas>
-          </div>
-          <div class="chart-full"><canvas id="dailyTrendChart"></canvas></div>
-          
-          <div class="page-break"></div>
-          <h2>Rankings e Destaques (Top 5)</h2>
-          <div class="rankings-grid">
-              <div><h3>Veículos com Maior Custo</h3>${renderTable(['Placa', 'Modelo', 'Custo Total'], topLists.vehiclesCost.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class="loss">R$ ${v.totalCost}</td></tr>`))}</div>
-              <div><h3>Veículos com Maior Receita</h3>${renderTable(['Placa', 'Modelo', 'Receita Total'], topLists.vehiclesRevenue.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class="profit">R$ ${v.totalRevenue}</td></tr>`))}</div>
-              <div><h3>Veículos Mais Lucrativos</h3>${renderTable(['Placa', 'Modelo', 'Saldo Final'], topLists.vehiclesBalance.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class="${v.balance >= 0 ? 'profit' : 'loss'}">R$ ${v.balance}</td></tr>`))}</div>
-              <div><h3>Veículos Mais Econômicos</h3>${renderTable(['Placa', 'Modelo', 'Média (KM/L)'], topLists.vehiclesEconomy.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td>${v.avgKmL}</td></tr>`))}</div>
-          </div>
-          <h3>Funcionários com Maior Faturamento</h3>
-          ${renderTable(['Nome', 'Receita Gerada', 'Nº de Viagens'], topLists.employeesRevenue.map(e => `<tr><td>${e.name}</td><td class="profit">R$ ${e.totalRevenue}</td><td>${e.tripsCount}</td></tr>`))}
-          
-          <div class="page-break"></div>
-          <h2>Análise Detalhada</h2>
-
-          <h3>Desempenho por Veículo</h3>
-          ${vehicleAnalysis.map(v => `
-            <div>
-              <h4>Veículo: ${v.plate} - ${v.model}</h4>
-              <div class="vehicle-analysis-container">
-                <div>
-                  ${renderTable(
-                    ['KM Rodado', 'Média (KM/L)', 'Nº Manutenções'],
-                    [`<tr><td>${v.kmDriven}</td><td>${v.avgKmL}</td><td>${v.maintenanceCount}</td></tr>`]
-                  )}
+          ${watermarkHtml}
+          <div class=\"content-layer\">
+            <div class=\"cover\">
+              <div>
+                <div class=\"cover-brand\">
+                  ${logoHtml}
+                  <div class=\"cover-title\">Relatorio de Desempenho da Frota</div>
+                  <div class=\"cover-bar\"></div>
+                  <div class=\"cover-period\">Periodo: ${formattedStartDate} a ${formattedEndDate}</div>
                 </div>
-                <div>
-                  ${renderTable(
-                    ['Receita', 'Custo', 'Saldo', 'Receita/KM', 'Custo/KM'],
-                    [`<tr>
-                      <td class="profit">R$ ${v.totalRevenue}</td>
-                      <td class="loss">R$ ${v.totalCost}</td>
-                      <td class="${v.balance >= 0 ? 'profit' : 'loss'}">R$ ${v.balance}</td>
-                      <td>R$ ${v.revenuePerKm}</td>
-                      <td>R$ ${v.costPerKm}</td>
-                    </tr>`]
-                  )}
+                <div class=\"cover-box\">
+                  <div><strong>Empresa:</strong> ${company?.name || '-'}</div>
+                  <div><strong>CNPJ:</strong> ${company?.cnpj || '-'}</div>
+                  <div><strong>Endereco:</strong> ${company?.addressLine || '-'}</div>
+                  <div><strong>Cidade:</strong> ${company?.cityLine || '-'}</div>
+                  <div><strong>Telefone:</strong> ${company?.phone || '-'}</div>
                 </div>
               </div>
+              <div class=\"cover-footer\">Gerado em: ${new Date().toLocaleString('pt-BR')}</div>
             </div>
-          `).join('')}
-          
-          <h3>Desempenho por Funcionário</h3>
-          ${renderTable(['Nome', 'Receita Total', 'Nº Viagens', 'Receita Média/Viagem'], employeeAnalysis.map(e => `<tr><td>${e.name}</td><td class="profit">R$ ${e.totalRevenue}</td><td>${e.tripsCount}</td><td>R$ ${e.avgRevenuePerTrip}</td></tr>`))}
-          
-          <h3>Receitas Diárias por Funcionário</h3>
-          ${employeeAnalysis.map(e => `<div><h4>${e.name}</h4>${renderTable(['Data', 'Valor da Receita'], e.dailyRevenues.map(dr => `<tr><td>${dr.date}</td><td class="profit">R$ ${dr.amount}</td></tr>`))}</div>`).join('')}
 
-          <div class="page-break"></div>
-          <h2>Registros Completos do Período</h2>
-          <h3>Histórico de Receitas (${detailedLists.revenues.length} registros)</h3>
-          ${renderTable(['Data', 'Funcionário', 'Veículo', 'Descrição', 'Valor'], detailedLists.revenues.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yy')}</td><td>${i.Employee?.name || '-'}</td><td>${i.Vehicle?.plate || '-'}</td><td>${i.description}</td><td class="profit">R$ ${parseFloat(i.amount).toFixed(2)}</td></tr>`))}
-          <div class="page-break"></div>
-          <h3>Histórico de Abastecimentos (${detailedLists.refuelings.length} registros)</h3>
-          ${renderTable(['Data', 'Veículo', 'Litros', 'Preço/Litro', 'Custo Total', 'KM Veículo'], detailedLists.refuelings.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yy')}</td><td>${i.Vehicle?.plate || '-'}</td><td>${i.liters}</td><td>R$ ${i.price_per_liter}</td><td class="loss">R$ ${parseFloat(i.total_cost).toFixed(2)}</td><td>${i.vehicle_km}</td></tr>`))}
-          <div class="page-break"></div>
-          <h3>Histórico de Manutenções (${detailedLists.maintenances.length} registros)</h3>
-          ${renderTable(['Data', 'Veículo', 'Tipo', 'Descrição', 'Custo'], detailedLists.maintenances.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yy')}</td><td>${i.Vehicle?.plate || '-'}</td><td>${i.type}</td><td>${i.description}</td><td class="loss">R$ ${parseFloat(i.cost).toFixed(2)}</td></tr>`))}
-          <h3>Histórico de Despesas Gerais (${detailedLists.generalExpenses.length} registros)</h3>
-          ${renderTable(['Data', 'Categoria', 'Descrição', 'Valor'], detailedLists.generalExpenses.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yy')}</td><td>${i.category}</td><td>${i.description}</td><td class="loss">R$ ${parseFloat(i.amount).toFixed(2)}</td></tr>`))}
+            <div class=\"page-break\"></div>
+
+            <div class=\"toc\">
+              <h2>Sumario</h2>
+              <ol>
+                <li>Painel Geral</li>
+                <li>Rankings e Destaques</li>
+                <li>Analise Detalhada</li>
+                <li>Registros Completos do Periodo</li>
+              </ol>
+              <p class=\"muted\">Observacao: todas as tabelas estao completas e sem limites.</p>
+            </div>
+
+            <div class=\"page-break\"></div>
+
+            <div class=\"header-info\">
+              <h1>Relatorio de Desempenho da Frota</h1>
+              <p>Periodo: ${formattedStartDate} a ${formattedEndDate}</p>
+              <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+            </div>
   
-          <script>
-            new Chart(document.getElementById('expensesChart').getContext('2d'), { type: 'pie', data: { labels: ['Combustível', 'Manutenção', 'Despesas Gerais'], datasets: [{ data: [${chartData.pie.join(',')}], backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56'] }] }, options: { responsive: true, plugins: { legend: { position: 'top' }, title: { display: true, text: 'Composição das Despesas' } } } });
-            new Chart(document.getElementById('revenueChart').getContext('2d'), { type: 'bar', data: { labels: ['Receita', 'Despesas'], datasets: [{ label: 'Valores (R$)', data: [${chartData.bar.join(',')}], backgroundColor: ['#4CAF50', '#F44336'] }] }, options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Receita vs. Despesas' } }, scales: { y: { beginAtZero: true } } } });
-            new Chart(document.getElementById('dailyTrendChart').getContext('2d'), { type: 'line', data: { labels: [${chartData.line.map(d => `'${d.date}'`).join(',')}], datasets: [ { label: 'Receita Diária', data: [${chartData.line.map(d => d.revenue).join(',')}], borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', fill: true, tension: 0.1 }, { label: 'Despesa Diária', data: [${chartData.line.map(d => d.expenses).join(',')}], borderColor: '#F44336', backgroundColor: 'rgba(244, 67, 54, 0.1)', fill: true, tension: 0.1 } ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Evolução Diária de Receitas e Despesas' } }, scales: { y: { beginAtZero: true } } } });
-          </script>
+            <h2>Painel Geral</h2>
+            <h3>Visao Executiva</h3>
+            <div class=\"summary-grid\">
+              <div class=\"summary-card\"><div class=\"summary-label\">Receita Total</div><div class=\"summary-value profit\">${formatCurrency(financialSummary.totalRevenue)}</div></div>
+              <div class=\"summary-card\"><div class=\"summary-label\">Despesas Totais</div><div class=\"summary-value loss\">${formatCurrency(financialSummary.totalExpenses)}</div></div>
+              <div class=\"summary-card\"><div class=\"summary-label\">Resultado Liquido</div><div class=\"summary-value ${financialSummary.netResult >= 0 ? 'profit' : 'loss'}\">${formatCurrency(financialSummary.netResult)}</div></div>
+              <div class=\"summary-card\"><div class=\"summary-label\">Margem</div><div class=\"summary-value\">${formatPercent(financialSummary.margin)}</div></div>
+            </div>
+            <h3>Resumo Financeiro</h3>
+            ${renderTable( ['Receita Total', 'Despesas Totais', 'Resultado Liquido', 'Margem de Lucro'], [`<tr><td class=\"profit\">${formatCurrency(financialSummary.totalRevenue)}</td><td class=\"loss\">${formatCurrency(financialSummary.totalExpenses)}</td><td class=\"${financialSummary.netResult >= 0 ? 'profit' : 'loss'}\">${formatCurrency(financialSummary.netResult)}</td><td>${formatPercent(financialSummary.margin)}</td></tr>`])}
+            <h3>Indicadores Chave de Desempenho (KPIs)</h3>
+            <div class=\"kpi-container\">
+              <div class=\"kpi-box\"><div class=\"kpi-title\">Custo Medio / KM (Frota)</div><div class=\"kpi-value\">${formatCurrency(kpis.fleetAvgCostPerKm)}</div></div>
+              <div class=\"kpi-box\"><div class=\"kpi-title\">Total de Viagens</div><div class=\"kpi-value\">${formatInteger(kpis.totalTrips)}</div></div>
+              <div class=\"kpi-box\"><div class=\"kpi-title\">Receita Media / Viagem</div><div class=\"kpi-value\">${formatCurrency(kpis.avgRevenuePerTrip)}</div></div>
+            </div>
+            <h3>Insights Rapidos</h3>
+            ${renderTable(['Indicador', 'Destaque'], insightRows)}
+            <h3>Volume de Registros</h3>
+            ${renderTable(['Indicador', 'Quantidade'], [
+              `<tr><td>Receitas</td><td>${formatInteger(recordSummary.revenues)}</td></tr>`,
+              `<tr><td>Abastecimentos</td><td>${formatInteger(recordSummary.refuelings)}</td></tr>`,
+              `<tr><td>Manutencoes</td><td>${formatInteger(recordSummary.maintenances)}</td></tr>`,
+              `<tr><td>Despesas Gerais</td><td>${formatInteger(recordSummary.generalExpenses)}</td></tr>`,
+              `<tr><td>Veiculos</td><td>${formatInteger(recordSummary.vehicles)}</td></tr>`,
+              `<tr><td>Funcionarios</td><td>${formatInteger(recordSummary.employees)}</td></tr>`
+            ])}
+
+            <h3>Visualizacao Grafica</h3>
+            <div class=\"chart-grid\">
+                <canvas id=\"expensesChart\"></canvas>
+                <canvas id=\"revenueChart\"></canvas>
+            </div>
+            <div class=\"chart-full\"><canvas id=\"dailyTrendChart\"></canvas></div>
+            
+            <div class=\"page-break\"></div>
+            <h2>Rankings e Destaques (Top 5)</h2>
+            <div class=\"rankings-grid\">
+                <div><h3>Veiculos com Maior Custo</h3>${renderTable(['Placa', 'Modelo', 'Custo Total'], topLists.vehiclesCost.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class=\"loss\">${formatCurrency(v.totalCost)}</td></tr>`))}</div>
+                <div><h3>Veiculos com Maior Receita</h3>${renderTable(['Placa', 'Modelo', 'Receita Total'], topLists.vehiclesRevenue.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class=\"profit\">${formatCurrency(v.totalRevenue)}</td></tr>`))}</div>
+                <div><h3>Veiculos Mais Lucrativos</h3>${renderTable(['Placa', 'Modelo', 'Saldo Final'], topLists.vehiclesBalance.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td class=\"${v.balance >= 0 ? 'profit' : 'loss'}\">${formatCurrency(v.balance)}</td></tr>`))}</div>
+                <div><h3>Veiculos Mais Economicos</h3>${renderTable(['Placa', 'Modelo', 'Media (KM/L)'], topLists.vehiclesEconomy.map(v => `<tr><td>${v.plate}</td><td>${v.model}</td><td>${formatNumber(v.avgKmL)}</td></tr>`))}</div>
+            </div>
+            <h3>Funcionarios com Maior Faturamento</h3>
+            ${renderTable(['Nome', 'Receita Gerada', 'No. de Viagens'], topLists.employeesRevenue.map(e => `<tr><td>${e.name}</td><td class=\"profit\">${formatCurrency(e.totalRevenue)}</td><td>${formatInteger(e.tripsCount)}</td></tr>`))}
+            
+            <div class=\"page-break\"></div>
+            <h2>Analise Detalhada</h2>
+
+            <h3>Desempenho por Veiculo</h3>
+            ${vehicleAnalysis.map(v => `
+              <div>
+                <h4>Veiculo: ${v.plate} - ${v.model}</h4>
+                <div class=\"vehicle-analysis-container\">
+                  <div>
+                    ${renderTable(
+                      ['KM Rodado', 'Media (KM/L)', 'No. Manutencoes'],
+                      [`<tr><td>${formatNumber(v.kmDriven)}</td><td>${formatNumber(v.avgKmL)}</td><td>${formatInteger(v.maintenanceCount)}</td></tr>`]
+                    )}
+                  </div>
+                  <div>
+                    ${renderTable(
+                      ['Receita', 'Custo', 'Saldo', 'Receita/KM', 'Custo/KM'],
+                      [`<tr>
+                        <td class=\"profit\">${formatCurrency(v.totalRevenue)}</td>
+                        <td class=\"loss\">${formatCurrency(v.totalCost)}</td>
+                        <td class=\"${v.balance >= 0 ? 'profit' : 'loss'}\">${formatCurrency(v.balance)}</td>
+                        <td>${formatCurrency(v.revenuePerKm)}</td>
+                        <td>${formatCurrency(v.costPerKm)}</td>
+                      </tr>`]
+                    )}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+            
+            <h3>Desempenho por Funcionario</h3>
+            ${renderTable(['Nome', 'Receita Total', 'No. Viagens', 'Receita Media/Viagem'], employeeAnalysis.map(e => `<tr><td>${e.name}</td><td class=\"profit\">${formatCurrency(e.totalRevenue)}</td><td>${formatInteger(e.tripsCount)}</td><td>${formatCurrency(e.avgRevenuePerTrip)}</td></tr>`))}
+            
+            <h3>Receitas Diarias por Funcionario</h3>
+            ${employeeAnalysis.map(e => `<div><h4>${e.name}</h4>${renderTable(['Data', 'Valor da Receita'], e.dailyRevenues.map(dr => `<tr><td>${dr.date}</td><td class=\"profit\">${formatCurrency(dr.amount)}</td></tr>`))}</div>`).join('')}
+
+            <div class=\"page-break\"></div>
+            <h2>Registros Completos do Periodo</h2>
+            <h3>Historico de Receitas (${formatInteger(detailedLists.revenues.length)} registros)</h3>
+            ${renderTable(['Data', 'Funcionario', 'Veiculo', 'Descricao', 'Valor'], detailedLists.revenues.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yyyy')}</td><td>${i.Employee?.name || '-'}</td><td>${i.Vehicle?.plate || '-'}</td><td>${i.description}</td><td class=\"profit\">${formatCurrency(i.amount)}</td></tr>`))}
+            <div class=\"page-break\"></div>
+            <h3>Historico de Abastecimentos (${formatInteger(detailedLists.refuelings.length)} registros)</h3>
+            ${renderTable(['Data', 'Veiculo', 'Litros', 'Preco/Litro', 'Custo Total', 'KM Veiculo'], detailedLists.refuelings.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yyyy')}</td><td>${i.Vehicle?.plate || '-'}</td><td>${formatNumber(i.liters)}</td><td>${formatCurrency(i.price_per_liter)}</td><td class=\"loss\">${formatCurrency(i.total_cost)}</td><td>${formatNumber(i.vehicle_km)}</td></tr>`))}
+            <div class=\"page-break\"></div>
+            <h3>Historico de Manutencoes (${formatInteger(detailedLists.maintenances.length)} registros)</h3>
+            ${renderTable(['Data', 'Veiculo', 'Tipo', 'Descricao', 'Custo'], detailedLists.maintenances.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yyyy')}</td><td>${i.Vehicle?.plate || '-'}</td><td>${i.type}</td><td>${i.description}</td><td class=\"loss\">${formatCurrency(i.cost)}</td></tr>`))}
+            <h3>Historico de Despesas Gerais (${formatInteger(detailedLists.generalExpenses.length)} registros)</h3>
+            ${renderTable(['Data', 'Categoria', 'Descricao', 'Valor'], detailedLists.generalExpenses.map(i => `<tr><td>${format(parseISO(i.date), 'dd/MM/yyyy')}</td><td>${i.category}</td><td>${i.description}</td><td class=\"loss\">${formatCurrency(i.amount)}</td></tr>`))}
+  
+            <script>
+              new Chart(document.getElementById('expensesChart').getContext('2d'), { type: 'pie', data: { labels: ['Combustivel', 'Manutencao', 'Despesas Gerais'], datasets: [{ data: [${chartData.pie.join(',')}], backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56'] }] }, options: { responsive: true, plugins: { legend: { position: 'top' }, title: { display: true, text: 'Composicao das Despesas' } } } });
+              new Chart(document.getElementById('revenueChart').getContext('2d'), { type: 'bar', data: { labels: ['Receita', 'Despesas'], datasets: [{ label: 'Valores (R$)', data: [${chartData.bar.join(',')}], backgroundColor: ['#4CAF50', '#F44336'] }] }, options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Receita vs. Despesas' } }, scales: { y: { beginAtZero: true } } } });
+              new Chart(document.getElementById('dailyTrendChart').getContext('2d'), { type: 'line', data: { labels: [${chartData.line.map(d => `'${d.date}'`).join(',')}], datasets: [ { label: 'Receita Diaria', data: [${chartData.line.map(d => d.revenue).join(',')}], borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', fill: true, tension: 0.1 }, { label: 'Despesa Diaria', data: [${chartData.line.map(d => d.expenses).join(',')}], borderColor: '#F44336', backgroundColor: 'rgba(244, 67, 54, 0.1)', fill: true, tension: 0.1 } ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Evolucao Diaria de Receitas e Despesas' } }, scales: { y: { beginAtZero: true } } } });
+            </script>
+          </div>
         </body>
       </html>
     `;

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import RevenueFormModal from '../components/RevenueFormModal';
+import RevenueImportModal from '../components/RevenueImportModal';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import EditIcon from '@mui/icons-material/Edit';
@@ -13,14 +14,12 @@ const RevenuesPage = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRevenue, setEditingRevenue] = useState(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Estados para os filtros
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Ref para o input de arquivo oculto
-  const fileInputRef = useRef(null);
 
   const fetchRevenues = async () => {
     try {
@@ -83,35 +82,25 @@ const RevenuesPage = () => {
     }
   };
 
-  // Função para lidar com a seleção do arquivo
-  const handleFileChange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      setLoading(true);
-      const response = await api.post('/revenues/import', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      alert(response.data.message || 'Importação realizada com sucesso!');
-      fetchRevenues(); // Atualiza a lista após importar
-    } catch (error) {
-      console.error("Erro na importação:", error);
-      alert('Erro ao importar planilha. Verifique o formato do arquivo.');
-    } finally {
-      setLoading(false);
-      // Limpa o input para permitir selecionar o mesmo arquivo novamente se necessário
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  const handleImportClick = () => {
+    setIsImportModalOpen(true);
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current.click();
+  const handleImportResult = (result) => {
+    const imported = result?.importedCount ?? 0;
+    const skippedExisting = result?.skippedExisting ?? 0;
+    const skippedInvalid = result?.skippedInvalid ?? 0;
+    const skippedStatus = result?.skippedStatus ?? 0;
+    const total = result?.totalRows ?? imported;
+    alert(
+      `Importação concluída.\n` +
+      `Total lidos: ${total}\n` +
+      `Importados: ${imported}\n` +
+      `Ignorados (já existentes): ${skippedExisting}\n` +
+      `Ignorados (status): ${skippedStatus}\n` +
+      `Ignorados (inválidos): ${skippedInvalid}`
+    );
+    fetchRevenues();
   };
 
   const clearFilters = () => {
@@ -158,14 +147,6 @@ const RevenuesPage = () => {
         <button className="btn" onClick={handleImportClick} style={{ backgroundColor: '#28a745', display: 'flex', alignItems: 'center', gap: '5px' }}>
           <CloudUploadIcon fontSize="small" /> Importar Planilha
         </button>
-        {/* Input oculto para o arquivo */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-          onChange={handleFileChange}
-        />
 
         {/* Inputs de Filtro */}
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginLeft: 'auto' }}>
@@ -247,6 +228,12 @@ const RevenuesPage = () => {
         onClose={handleCloseModal}
         onSave={handleSaveRevenue}
         revenue={editingRevenue}
+      />
+
+      <RevenueImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImported={handleImportResult}
       />
     </div>
   );

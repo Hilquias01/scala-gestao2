@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   // Voltando para localhost, pois os dois servidores rodarão na mesma máquina
-  baseURL: 'http://localhost:5000/api', 
+  baseURL: 'http://localhost:5001/api', 
 });
 
 // ... (o resto do arquivo continua igual)

@@ -43,10 +43,7 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.employee_id) { // Validação
-      alert('Por favor, selecione o funcionário responsável.');
-      return;
-    }
+    // Funcionário é opcional
     onSave(formData);
   };
 
@@ -59,9 +56,9 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
           <div className="form-group"><label>Descrição</label><input name="description" value={formData.description} onChange={handleChange} required /></div>
           <div className="form-group"><label>Valor (R$)</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required /></div>
            <div className="form-group">
-            <label>Funcionário Responsável</label>
-            <select name="employee_id" value={formData.employee_id} onChange={handleChange} required>
-              <option value="">Selecione um funcionário</option>
+            <label>Funcionário Responsável (Opcional)</label>
+            <select name="employee_id" value={formData.employee_id} onChange={handleChange}>
+              <option value="">Nenhum</option>
               {employees.map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}

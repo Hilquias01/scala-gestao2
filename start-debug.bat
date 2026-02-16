@@ -8,7 +8,7 @@ echo Data/Hora: %date% %time% >> "%LOGFILE%"
 echo ======================================================= >> "%LOGFILE%"
 
 set FRONTEND_PORT=5173
-set BACKEND_PORT=5000
+set BACKEND_PORT=5001
 set BACKEND_DIR=backend
 set FRONTEND_DIR=frontend
 set LOCAL_IP=10.50.50.247

@@ -21,7 +21,7 @@ module.exports = (sequelize) => {
     },
     employee_id: {
       type: DataTypes.INTEGER,
-      allowNull: false, // Tornando obrigatório, como no abastecimento
+      allowNull: true, // Opcional
     },
     vehicle_id: {
       type: DataTypes.INTEGER,
