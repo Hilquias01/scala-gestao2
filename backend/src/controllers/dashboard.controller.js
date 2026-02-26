@@ -1,6 +1,7 @@
 const { Vehicle, Employee, Refueling, Maintenance, GeneralExpense, Revenue } = require('../models');
 const { Op } = require('sequelize');
-const { subMonths, format, startOfMonth, endOfMonth } = require('date-fns');
+const { subMonths, format, startOfMonth, endOfMonth, addMonths, parseISO } = require('date-fns');
+const { sendError } = require('../utils/response');
 
 // This helper function now works with date strings, avoiding timezone issues.
 const getPeriod = (req) => {
@@ -30,64 +31,91 @@ exports.getKpis = async (req, res) => {
     const totalRevenue = await Revenue.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
     
     const totalMonthCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0);
+    const netResult = (totalRevenue || 0) - totalMonthCost;
+    const margin = totalRevenue ? (netResult / totalRevenue) : 0;
 
     res.json({
       totalVehicles,
       totalEmployees,
       totalMonthCost: parseFloat(totalMonthCost).toFixed(2),
       totalMonthRevenue: parseFloat(totalRevenue || 0).toFixed(2),
+      netResult: parseFloat(netResult).toFixed(2),
+      margin,
     });
   } catch (error) { 
-    console.error("Erro ao buscar KPIs:", error);
-    res.status(500).json({ message: 'Erro ao buscar KPIs.' }); 
+    sendError(res, 500, 'Erro ao buscar KPIs.', 'INTERNAL_ERROR', error, req);
   }
+};
+
+const buildMonthsFromRange = (startDate, endDate) => {
+  const start = startOfMonth(parseISO(startDate));
+  const end = endOfMonth(parseISO(endDate));
+  const months = [];
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return months;
+  let cursor = start;
+  while (cursor <= end) {
+    months.push(new Date(cursor));
+    cursor = addMonths(cursor, 1);
+  }
+  return months;
 };
 
 // This function is independent of the date filter and shows the last 6 months.
 exports.getCostEvolution = async (req, res) => {
   try {
+    const { startDate, endDate } = req.query;
     const labels = [];
-    const costData = []; // Renomeado de 'data' para clareza
-    const revenueData = []; // Novo array para as receitas
+    const costData = [];
+    const revenueData = [];
 
-    for (let i = 5; i >= 0; i--) {
-      const targetDate = subMonths(new Date(), i);
-      const monthLabel = format(targetDate, 'MM/yyyy');
-      labels.push(monthLabel);
+    let months = [];
+    if (startDate && endDate) {
+      months = buildMonthsFromRange(startDate, endDate);
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        months.push(subMonths(new Date(), i));
+      }
+    }
 
+    for (const targetDate of months) {
+      labels.push(format(targetDate, 'MM/yyyy'));
       const start = startOfMonth(targetDate);
       const end = endOfMonth(targetDate);
 
-      // Lógica de Custos (existente)
       const refuelingCost = await Refueling.sum('total_cost', { where: { date: { [Op.between]: [start, end] } } });
       const maintenanceCost = await Maintenance.sum('cost', { where: { date: { [Op.between]: [start, end] } } });
       const generalExpenseAmount = await GeneralExpense.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
       const totalCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0);
       costData.push(totalCost);
 
-      // ## NOVA LÓGICA: Adiciona o cálculo de Receitas ##
       const totalRevenue = await Revenue.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
       revenueData.push(totalRevenue || 0);
     }
 
-    // Retorna os dados de custos e receitas
     res.json({ labels, costData, revenueData });
-
   } catch (error) {
-    console.error("Erro ao buscar dados de evolução de custos:", error);
-    res.status(500).json({ message: 'Erro ao buscar dados do gráfico.' });
+    sendError(res, 500, 'Erro ao buscar dados do gráfico.', 'INTERNAL_ERROR', error, req);
   }
 };
 
 // This function is also independent of the date filter.
 exports.getRevenueVsExpenses = async (req, res) => {
   try {
+    const { startDate, endDate } = req.query;
     const labels = [];
     const revenueData = [];
     const expenseData = [];
 
-    for (let i = 5; i >= 0; i--) {
-      const date = subMonths(new Date(), i);
+    let months = [];
+    if (startDate && endDate) {
+      months = buildMonthsFromRange(startDate, endDate);
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        months.push(subMonths(new Date(), i));
+      }
+    }
+
+    for (const date of months) {
       labels.push(format(date, 'MM/yyyy'));
       const start = startOfMonth(date);
       const end = endOfMonth(date);
@@ -102,8 +130,7 @@ exports.getRevenueVsExpenses = async (req, res) => {
     }
     res.json({ labels, revenueData, expenseData });
   } catch (error) {
-    console.error("Erro ao buscar dados de receitas vs. despesas:", error);
-    res.status(500).json({ message: 'Erro ao buscar dados.' });
+    sendError(res, 500, 'Erro ao buscar dados.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -119,8 +146,7 @@ exports.getSpendingByCategory = async (req, res) => {
     const labels = ['Abastecimentos', 'Manutenções', 'Despesas Gerais'];
     res.json({ labels, data });
   } catch (error) { 
-    console.error("Erro ao buscar gastos por categoria:", error);
-    res.status(500).json({ message: 'Erro ao buscar dados do gráfico.' }); 
+    sendError(res, 500, 'Erro ao buscar dados do gráfico.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -141,8 +167,7 @@ exports.getCostsPerVehicle = async (req, res) => {
     }
     res.json({ labels, refuelingData, maintenanceData });
   } catch (error) { 
-    console.error("Erro ao buscar custos por veículo:", error);
-    res.status(500).json({ message: 'Erro ao buscar custos por veículo.' }); 
+    sendError(res, 500, 'Erro ao buscar custos por veículo.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -165,7 +190,6 @@ exports.getTop5ExpensiveVehicles = async (req, res) => {
     const data = top5.map(v => v.totalCost);
     res.json({ labels, data });
   } catch (error) { 
-    console.error("Erro ao buscar top 5 veículos:", error);
-    res.status(500).json({ message: 'Erro ao buscar top 5 veículos.' }); 
+    sendError(res, 500, 'Erro ao buscar top 5 veículos.', 'INTERNAL_ERROR', error, req);
   }
 };

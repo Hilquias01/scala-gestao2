@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { sendError } = require('../utils/response');
 
 module.exports = function (req, res, next) {
   // Pega o token do header
@@ -6,7 +7,7 @@ module.exports = function (req, res, next) {
 
   // Verifica se não há token
   if (!token) {
-    return res.status(401).json({ message: 'Nenhum token, autorização negada.' });
+    return sendError(res, 401, 'Nenhum token, autorização negada.', 'UNAUTHORIZED', null, req);
   }
 
   // Verifica o token
@@ -15,6 +16,6 @@ module.exports = function (req, res, next) {
     req.user = decoded.user;
     next();
   } catch (err) {
-    res.status(401).json({ message: 'Token inválido.' });
+    sendError(res, 401, 'Token inválido.', 'UNAUTHORIZED', err, req);
   }
 };

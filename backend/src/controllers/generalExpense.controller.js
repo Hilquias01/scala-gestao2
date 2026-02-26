@@ -1,4 +1,5 @@
 const { GeneralExpense } = require('../models');
+const { sendError } = require('../utils/response');
 
 // CRUD Padrão
 exports.create = async (req, res) => {
@@ -6,7 +7,7 @@ exports.create = async (req, res) => {
     const newExpense = await GeneralExpense.create(req.body);
     res.status(201).json(newExpense);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao criar despesa.', error: error.message });
+    sendError(res, 500, 'Erro ao criar despesa.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -15,7 +16,7 @@ exports.findAll = async (req, res) => {
     const expenses = await GeneralExpense.findAll({ order: [['date', 'DESC']] });
     res.status(200).json(expenses);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar despesas.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar despesas.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -23,11 +24,11 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const [updated] = await GeneralExpense.update(req.body, { where: { id: id } });
-    if (!updated) return res.status(404).json({ message: 'Despesa não encontrada.' });
+    if (!updated) return sendError(res, 404, 'Despesa não encontrada.', 'NOT_FOUND', null, req);
     const updatedExpense = await GeneralExpense.findByPk(id);
     res.status(200).json(updatedExpense);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao atualizar despesa.', error: error.message });
+    sendError(res, 500, 'Erro ao atualizar despesa.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -35,9 +36,9 @@ exports.delete = async (req, res) => {
   try {
     const { id } = req.params;
     const deleted = await GeneralExpense.destroy({ where: { id: id } });
-    if (!deleted) return res.status(404).json({ message: 'Despesa não encontrada.' });
+    if (!deleted) return sendError(res, 404, 'Despesa não encontrada.', 'NOT_FOUND', null, req);
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao deletar despesa.', error: error.message });
+    sendError(res, 500, 'Erro ao deletar despesa.', 'INTERNAL_ERROR', error, req);
   }
 };

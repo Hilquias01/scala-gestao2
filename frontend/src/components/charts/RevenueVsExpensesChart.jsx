@@ -5,14 +5,18 @@ import api from '../../services/api';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const RevenueVsExpensesChart = () => {
+const RevenueVsExpensesChart = ({ dateRange }) => {
   const [chartData, setChartData] = useState({ labels: [], datasets: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchChartData = async () => {
       try {
-        const { data } = await api.get('/dashboard/revenue-vs-expenses');
+        const { data } = await api.get('/dashboard/revenue-vs-expenses', {
+          params: dateRange?.start && dateRange?.end
+            ? { startDate: dateRange.start, endDate: dateRange.end }
+            : undefined,
+        });
         setChartData({
           labels: data.labels,
           datasets: [
@@ -39,13 +43,18 @@ const RevenueVsExpensesChart = () => {
       }
     };
     fetchChartData();
-  }, []);
+  }, [dateRange]);
 
   const options = {
     responsive: true,
     plugins: {
       legend: { position: 'top' },
-      title: { display: true, text: 'Receitas vs. Despesas (Últimos 6 Meses)' },
+      title: {
+        display: true,
+        text: dateRange?.start && dateRange?.end
+          ? 'Receitas vs. Despesas (Período Selecionado)'
+          : 'Receitas vs. Despesas (Últimos 6 Meses)',
+      },
     },
     scales: {
       y: {

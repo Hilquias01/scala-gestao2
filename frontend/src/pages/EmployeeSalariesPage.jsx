@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import api from '../services/api';
 import EmployeeSalaryRecordModal from '../components/EmployeeSalaryRecordModal';
+import TablePagination from '../components/TablePagination';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import EditIcon from '@mui/icons-material/Edit';
@@ -14,6 +15,11 @@ const EmployeeSalariesPage = () => {
   const [periodFilter, setPeriodFilter] = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [employees, setEmployees] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('period');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchEmployees = async () => {
     try {
@@ -27,10 +33,7 @@ const EmployeeSalariesPage = () => {
   const fetchSalaries = async () => {
     try {
       setLoading(true);
-      const params = {};
-      if (periodFilter) params.period = periodFilter;
-      if (employeeFilter) params.employee_id = employeeFilter;
-      const { data } = await api.get('/employee-salaries', { params });
+      const { data } = await api.get('/employee-salaries');
       setSalaries(data);
     } catch (err) {
       console.error('Falha ao carregar salarios', err);
@@ -44,10 +47,6 @@ const EmployeeSalariesPage = () => {
     fetchEmployees();
     fetchSalaries();
   }, []);
-
-  useEffect(() => {
-    fetchSalaries();
-  }, [periodFilter, employeeFilter]);
 
   const handleOpenModal = (salary = null) => {
     setEditingSalary(salary);
@@ -85,66 +84,149 @@ const EmployeeSalariesPage = () => {
     }
   };
 
+  const handleSort = (key) => {
+    if (sortBy === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortIndicator = (key) => {
+    if (sortBy !== key) return '';
+    return sortDir === 'asc' ? '▲' : '▼';
+  };
+
+  const filteredSalaries = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return salaries.filter((salary) => {
+      if (employeeFilter && String(salary.employee_id) !== String(employeeFilter)) return false;
+      if (periodFilter && salary.period !== periodFilter) return false;
+      if (!term) return true;
+      const haystack = [
+        salary.employee?.name,
+        salary.notes,
+        salary.period,
+        salary.amount,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [salaries, searchTerm, employeeFilter, periodFilter]);
+
+  const sortedSalaries = useMemo(() => {
+    const copy = [...filteredSalaries];
+    copy.sort((a, b) => {
+      let aValue;
+      let bValue;
+      if (sortBy === 'employee') {
+        aValue = a.employee?.name || '';
+        bValue = b.employee?.name || '';
+      } else if (sortBy === 'amount') {
+        aValue = Number(a.amount);
+        bValue = Number(b.amount);
+      } else {
+        aValue = a[sortBy];
+        bValue = b[sortBy];
+      }
+      const aComparable = typeof aValue === 'number' ? aValue : String(aValue ?? '').toLowerCase();
+      const bComparable = typeof bValue === 'number' ? bValue : String(bValue ?? '').toLowerCase();
+      if (aComparable < bComparable) return sortDir === 'asc' ? -1 : 1;
+      if (aComparable > bComparable) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [filteredSalaries, sortBy, sortDir]);
+
+  const paginatedSalaries = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedSalaries.slice(start, start + pageSize);
+  }, [sortedSalaries, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, employeeFilter, periodFilter, pageSize, salaries.length]);
+
   if (loading) return <div>Carregando salarios...</div>;
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Salarios</h1>
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">Salarios</h1>
+      </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem', alignItems: 'center' }}>
-        <button className="btn" onClick={() => handleOpenModal()} style={{ maxWidth: '250px' }}>
-          Lancar Salario
-        </button>
-        <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto', alignItems: 'center' }}>
-          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}>
+      <div className="table-card">
+        <div className="table-toolbar">
+          <button className="btn" onClick={() => handleOpenModal()} style={{ maxWidth: '250px', width: 'auto' }}>
+            Lancar Salario
+          </button>
+          <div className="spacer" />
+          <input
+            type="text"
+            placeholder="Buscar funcionário, observações..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
             <option value="">Todos os funcionarios</option>
             {employees.map(emp => (
               <option key={emp.id} value={emp.id}>{emp.name}</option>
             ))}
           </select>
-          <input type="month" value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }} />
+          <input type="month" value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)} />
           {(employeeFilter || periodFilter) && (
             <button onClick={() => { setEmployeeFilter(''); setPeriodFilter(''); }} style={{ background: 'none', border: 'none', color: '#d32f2f', cursor: 'pointer', textDecoration: 'underline' }}>
               Limpar
             </button>
           )}
         </div>
-      </div>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ backgroundColor: 'var(--azul-scala)', color: 'var(--branco)' }}>
-            <th style={{ padding: '0.75rem' }}>Periodo</th>
-            <th style={{ padding: '0.75rem' }}>Funcionario</th>
-            <th style={{ padding: '0.75rem' }}>Valor</th>
-            <th style={{ padding: '0.75rem' }}>Observacoes</th>
-            <th style={{ padding: '0.75rem' }}>Acoes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {salaries.length === 0 && (
+        <table className="data-table">
+          <thead>
             <tr>
-              <td colSpan="5" style={{ padding: '1rem', textAlign: 'center' }}>Nenhum salario encontrado.</td>
+              <th className="sortable" onClick={() => handleSort('period')}>Periodo <span className="sort-indicator">{sortIndicator('period')}</span></th>
+              <th className="sortable" onClick={() => handleSort('employee')}>Funcionario <span className="sort-indicator">{sortIndicator('employee')}</span></th>
+              <th className="sortable" onClick={() => handleSort('amount')}>Valor <span className="sort-indicator">{sortIndicator('amount')}</span></th>
+              <th className="sortable" onClick={() => handleSort('notes')}>Observacoes <span className="sort-indicator">{sortIndicator('notes')}</span></th>
+              <th>Acoes</th>
             </tr>
-          )}
-          {salaries.map((salary) => (
-            <tr key={salary.id} style={{ borderBottom: '1px solid #ddd', textAlign: 'center' }}>
-              <td>{salary.period}</td>
-              <td>{salary.employee?.name || '-'}</td>
-              <td>R$ {parseFloat(salary.amount).toFixed(2)}</td>
-              <td>{salary.notes || '-'}</td>
-              <td>
-                <Tooltip title="Editar">
-                  <IconButton onClick={() => handleOpenModal(salary)} color="primary"><EditIcon /></IconButton>
-                </Tooltip>
-                <Tooltip title="Excluir">
-                  <IconButton onClick={() => handleDeleteSalary(salary.id)} color="error"><DeleteIcon /></IconButton>
-                </Tooltip>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {paginatedSalaries.length === 0 ? (
+              <tr>
+                <td colSpan="5" className="table-empty">Nenhum salario encontrado.</td>
+              </tr>
+            ) : (
+              paginatedSalaries.map((salary) => (
+                <tr key={salary.id}>
+                  <td>{salary.period}</td>
+                  <td>{salary.employee?.name || '-'}</td>
+                  <td>R$ {parseFloat(salary.amount).toFixed(2)}</td>
+                  <td>{salary.notes || '-'}</td>
+                  <td className="action-cell">
+                    <Tooltip title="Editar">
+                      <IconButton onClick={() => handleOpenModal(salary)} color="primary"><EditIcon /></IconButton>
+                    </Tooltip>
+                    <Tooltip title="Excluir">
+                      <IconButton onClick={() => handleDeleteSalary(salary.id)} color="error"><DeleteIcon /></IconButton>
+                    </Tooltip>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={sortedSalaries.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+        />
+      </div>
 
       <EmployeeSalaryRecordModal
         isOpen={isModalOpen}

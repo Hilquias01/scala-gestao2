@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./src/models'); // Importa a instância do Sequelize
+const { sendError } = require('./src/utils/response');
 
 const app = express();
 
@@ -28,6 +29,11 @@ app.use('/api/general-expenses', require('./src/routes/generalExpense.routes.js'
 app.use('/api/revenues', require('./src/routes/revenue.routes.js'));
 app.use('/api/dashboard', require('./src/routes/dashboard.routes.js')); // Adicionando a rota que faltava
 app.use('/api/reports', require('./src/routes/report.routes.js'));
+
+// Rota não encontrada (padrão)
+app.use((req, res) => {
+  sendError(res, 404, 'Rota não encontrada.', 'NOT_FOUND', null, req);
+});
 
 
 const PORT = process.env.PORT || 5000;

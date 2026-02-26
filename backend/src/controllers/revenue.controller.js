@@ -1,6 +1,7 @@
 const { Revenue, Vehicle, Employee, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const xlsx = require('xlsx');
+const { sendError } = require('../utils/response');
 
 const PEDIDOS_HEADERS = [
   'Número',
@@ -49,6 +50,20 @@ const formatDateFromParts = (y, m, d) => {
   return `${y}-${pad2(m)}-${pad2(d)}`;
 };
 
+const formatDateForExport = (value) => {
+  if (!value) return '';
+  const text = String(value);
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  }
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${pad2(parsed.getUTCDate())}/${pad2(parsed.getUTCMonth() + 1)}/${parsed.getUTCFullYear()}`;
+  }
+  return text;
+};
+
 const parseDateToISO = (value) => {
   if (value === null || value === undefined || value === '') return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -91,6 +106,166 @@ const extractPedidoNumberFromDescription = (description) => {
   return match ? match[1] : null;
 };
 
+const buildHeaderMap = (headers) => headers.reduce((acc, header, idx) => {
+  if (header) acc[String(header).trim()] = idx;
+  return acc;
+}, {});
+
+const buildDuplicateKey = (date, amount, description) => `${date}|${amount}|${String(description || '').toLowerCase()}`;
+
+const analyzeImport = async ({ buffer, employeeId, transaction }) => {
+  const workbook = xlsx.read(buffer, { type: 'buffer' });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const headers = rows[0] || [];
+  const headerMap = buildHeaderMap(headers);
+  const isPedidosVenda = PEDIDOS_HEADERS.every((h) => headerMap[h] !== undefined);
+
+  const importRows = [];
+  const previewRows = [];
+  const duplicateRows = [];
+  const invalidRows = [];
+  let skippedStatus = 0;
+  let totalRows = 0;
+
+  if (isPedidosVenda) {
+    const existing = await Revenue.findAll({
+      attributes: ['description'],
+      where: { description: { [Op.like]: 'Pedido %' } },
+      transaction,
+    });
+    const existingPedidos = new Set();
+    existing.forEach((rev) => {
+      const numero = extractPedidoNumberFromDescription(rev.description);
+      if (numero) existingPedidos.add(numero);
+    });
+    const seenInFile = new Set();
+
+    totalRows = Math.max(rows.length - 1, 0);
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+
+      const numero = normalizePedidoNumber(row[headerMap['Número']]);
+      if (!numero) {
+        invalidRows.push({ row: i + 1, reason: 'Número inválido' });
+        continue;
+      }
+
+      const statusVendaRaw = row[headerMap['Status']];
+      const statusPagamentoRaw = row[headerMap['Status do Pagamento']];
+      const statusVenda = statusVendaRaw ? String(statusVendaRaw).trim().toLowerCase() : '';
+      const statusPagamento = statusPagamentoRaw ? String(statusPagamentoRaw).trim().toLowerCase() : '';
+
+      if (statusVenda.includes('cancel') || statusPagamento.includes('cancel')) {
+        skippedStatus += 1;
+        continue;
+      }
+
+      const date = parseDateToISO(row[headerMap['Data Emissão']]);
+      const amount = parseAmount(row[headerMap['Valor Total']]);
+      if (!date || amount === null) {
+        invalidRows.push({ row: i + 1, reason: 'Data ou valor inválido' });
+        continue;
+      }
+
+      const cliente = row[headerMap['Cliente']] || '';
+      const description = cliente ? `Pedido ${numero} - ${cliente}` : `Pedido ${numero}`;
+
+      if (existingPedidos.has(numero)) {
+        duplicateRows.push({ row: i + 1, numero, description, date, amount, reason: 'Já existe' });
+        continue;
+      }
+
+      if (seenInFile.has(numero)) {
+        duplicateRows.push({ row: i + 1, numero, description, date, amount, reason: 'Duplicado na planilha' });
+        continue;
+      }
+
+      importRows.push({
+        date,
+        description,
+        amount,
+        employee_id: employeeId || null,
+        vehicle_id: null,
+      });
+      previewRows.push({ row: i + 1, numero, description, date, amount });
+      existingPedidos.add(numero);
+      seenInFile.add(numero);
+    }
+  } else {
+    const data = xlsx.utils.sheet_to_json(sheet);
+    totalRows = data.length;
+    const candidateRows = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const formattedDate = parseDateToISO(row.Vencimento);
+      const amount = parseAmount(row.Valor);
+      const description = `${row.Conta} - Cliente: ${row.Cliente || 'Não informado'}`;
+
+      if (formattedDate && amount !== null) {
+        candidateRows.push({
+          row: i + 2,
+          date: formattedDate,
+          amount,
+          description,
+        });
+      } else {
+        invalidRows.push({ row: i + 2, reason: 'Data ou valor inválido' });
+      }
+    }
+
+    let existingKeys = new Set();
+    if (candidateRows.length > 0) {
+      const dates = candidateRows.map((item) => item.date).filter(Boolean).sort();
+      const minDate = dates[0];
+      const maxDate = dates[dates.length - 1];
+      if (minDate && maxDate) {
+        const existing = await Revenue.findAll({
+          attributes: ['date', 'amount', 'description'],
+          where: { date: { [Op.between]: [minDate, maxDate] } },
+          transaction,
+        });
+        existingKeys = new Set(existing.map((rev) => buildDuplicateKey(rev.date, rev.amount, rev.description)));
+      }
+    }
+
+    const seenInFile = new Set();
+    for (const item of candidateRows) {
+      const key = buildDuplicateKey(item.date, item.amount, item.description);
+      if (existingKeys.has(key)) {
+        duplicateRows.push({ ...item, reason: 'Já existe' });
+        continue;
+      }
+      if (seenInFile.has(key)) {
+        duplicateRows.push({ ...item, reason: 'Duplicado na planilha' });
+        continue;
+      }
+      importRows.push({
+        date: item.date,
+        description: item.description,
+        amount: item.amount,
+        employee_id: employeeId || null,
+        vehicle_id: null,
+      });
+      previewRows.push(item);
+      seenInFile.add(key);
+    }
+  }
+
+  return {
+    format: isPedidosVenda ? 'pedidos_venda' : 'generico',
+    totalRows,
+    importRows,
+    previewRows,
+    duplicateRows,
+    invalidRows,
+    skippedStatus,
+  };
+};
+
 // Listar todas as receitas com suporte a filtros
 exports.findAll = async (req, res) => {
   try {
@@ -102,9 +277,15 @@ exports.findAll = async (req, res) => {
       where.date = { [Op.between]: [startDate, endDate] };
     }
 
-    // Filtro de busca por descrição ou cliente (através da descrição)
+    // Filtro de busca por descrição, funcionário ou veículo
     if (search) {
-      where.description = { [Op.like]: `%${search}%` };
+      const term = `%${search}%`;
+      where[Op.or] = [
+        { description: { [Op.like]: term } },
+        { '$Employee.name$': { [Op.like]: term } },
+        { '$Vehicle.plate$': { [Op.like]: term } },
+        { '$Vehicle.model$': { [Op.like]: term } },
+      ];
     }
 
     const revenues = await Revenue.findAll({
@@ -117,8 +298,88 @@ exports.findAll = async (req, res) => {
     });
     res.status(200).json(revenues);
   } catch (error) {
-    console.error("Erro ao buscar receitas:", error);
-    res.status(500).json({ message: 'Erro ao buscar receitas.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar receitas.', 'INTERNAL_ERROR', error, req);
+  }
+};
+
+// Exportar receitas para planilha
+exports.exportRevenues = async (req, res) => {
+  try {
+    const { startDate, endDate, search } = req.query;
+    const where = {};
+
+    if (startDate && endDate) {
+      where.date = { [Op.between]: [startDate, endDate] };
+    }
+
+    if (search) {
+      const term = `%${search}%`;
+      where[Op.or] = [
+        { description: { [Op.like]: term } },
+        { '$Employee.name$': { [Op.like]: term } },
+        { '$Vehicle.plate$': { [Op.like]: term } },
+        { '$Vehicle.model$': { [Op.like]: term } },
+      ];
+    }
+
+    const revenues = await Revenue.findAll({
+      where,
+      order: [['date', 'DESC']],
+      include: [
+        { model: Vehicle, attributes: ['plate', 'model'] },
+        { model: Employee, attributes: ['name'] }
+      ]
+    });
+
+    const rows = revenues.map((revenue) => ({
+      Data: formatDateForExport(revenue.date),
+      Descricao: revenue.description,
+      Funcionario: revenue.Employee?.name || '',
+      Veiculo: revenue.Vehicle ? `${revenue.Vehicle.plate} - ${revenue.Vehicle.model}` : '',
+      Valor: Number(revenue.amount) || 0,
+    }));
+
+    const workbook = xlsx.utils.book_new();
+    const worksheet = xlsx.utils.json_to_sheet(rows, {
+      header: ['Data', 'Descricao', 'Funcionario', 'Veiculo', 'Valor'],
+    });
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Receitas');
+
+    const buffer = xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+    const fileName = `receitas-${startDate || 'todas'}-a-${endDate || 'todas'}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
+  } catch (error) {
+    sendError(res, 500, 'Erro ao exportar planilha.', 'INTERNAL_ERROR', error, req);
+  }
+};
+
+// Pré-visualizar importação
+exports.previewImport = async (req, res) => {
+  try {
+    if (!req.file) {
+      return sendError(res, 400, 'Nenhum arquivo enviado.', 'VALIDATION_ERROR', null, req);
+    }
+
+    const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
+    const result = await analyzeImport({ buffer: req.file.buffer, employeeId });
+
+    res.status(200).json({
+      message: 'Pré-visualização gerada.',
+      format: result.format,
+      totalRows: result.totalRows,
+      importCount: result.importRows.length,
+      duplicateCount: result.duplicateRows.length,
+      invalidCount: result.invalidRows.length,
+      skippedStatus: result.skippedStatus,
+      preview: result.previewRows,
+      duplicates: result.duplicateRows,
+      invalidRows: result.invalidRows,
+    });
+  } catch (error) {
+    sendError(res, 500, 'Erro ao pré-visualizar planilha.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -127,135 +388,38 @@ exports.importRevenues = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     if (!req.file) {
-      return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+      return sendError(res, 400, 'Nenhum arquivo enviado.', 'VALIDATION_ERROR', null, req);
     }
 
     const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
+    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, transaction: t });
 
-    // Lê o arquivo a partir do buffer (memória)
-    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    const headers = rows[0] || [];
-    const headerMap = headers.reduce((acc, header, idx) => {
-      if (header) acc[String(header).trim()] = idx;
-      return acc;
-    }, {});
-
-    const isPedidosVenda = PEDIDOS_HEADERS.every((h) => headerMap[h] !== undefined);
-    const importedRevenues = [];
-    let skippedExisting = 0;
-    let skippedInvalid = 0;
-    let skippedStatus = 0;
-
-    if (isPedidosVenda) {
-      const existing = await Revenue.findAll({
-        attributes: ['description'],
-        where: { description: { [Op.like]: 'Pedido %' } },
-        transaction: t,
-      });
-      const existingPedidos = new Set();
-      existing.forEach((rev) => {
-        const numero = extractPedidoNumberFromDescription(rev.description);
-        if (numero) existingPedidos.add(numero);
-      });
-
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || row.length === 0) continue;
-
-        const numero = normalizePedidoNumber(row[headerMap['Número']]);
-        if (!numero) {
-          skippedInvalid += 1;
-          continue;
-        }
-
-        const statusVendaRaw = row[headerMap['Status']];
-        const statusPagamentoRaw = row[headerMap['Status do Pagamento']];
-        const statusVenda = statusVendaRaw ? String(statusVendaRaw).trim().toLowerCase() : '';
-        const statusPagamento = statusPagamentoRaw ? String(statusPagamentoRaw).trim().toLowerCase() : '';
-
-        // Importa tudo que NÃO estiver cancelado
-        if (statusVenda.includes('cancel')) {
-          skippedStatus += 1;
-          continue;
-        }
-        if (statusPagamento.includes('cancel')) {
-          skippedStatus += 1;
-          continue;
-        }
-
-        if (existingPedidos.has(numero)) {
-          skippedExisting += 1;
-          continue;
-        }
-
-        const date = parseDateToISO(row[headerMap['Data Emissão']]);
-        const amount = parseAmount(row[headerMap['Valor Total']]);
-        if (!date || amount === null) {
-          skippedInvalid += 1;
-          continue;
-        }
-
-        const cliente = row[headerMap['Cliente']] || '';
-        importedRevenues.push({
-          date,
-          description: cliente ? `Pedido ${numero} - ${cliente}` : `Pedido ${numero}`,
-          amount,
-          employee_id: employeeId || null,
-          vehicle_id: null,
-        });
-        existingPedidos.add(numero);
-      }
-    } else {
-      const data = xlsx.utils.sheet_to_json(sheet);
-
-      for (const row of data) {
-        const formattedDate = parseDateToISO(row.Vencimento);
-        const amount = parseAmount(row.Valor);
-
-        if (formattedDate && amount !== null) {
-          importedRevenues.push({
-            date: formattedDate,
-            description: `${row.Conta} - Cliente: ${row.Cliente || 'Não informado'}`,
-            amount,
-            employee_id: employeeId || null,
-            vehicle_id: null,
-          });
-        } else {
-          skippedInvalid += 1;
-        }
-      }
-    }
-
-    if (importedRevenues.length === 0) {
+    if (result.importRows.length === 0) {
       await t.commit();
       return res.status(200).json({
         message: 'Nenhum registro elegível para importação.',
         importedCount: 0,
-        skippedExisting,
-        skippedInvalid,
-        skippedStatus,
-        totalRows: rows.length ? rows.length - 1 : 0,
+        skippedExisting: result.duplicateRows.length,
+        skippedInvalid: result.invalidRows.length,
+        skippedStatus: result.skippedStatus,
+        totalRows: result.totalRows,
       });
     }
 
-    await Revenue.bulkCreate(importedRevenues, { transaction: t });
+    await Revenue.bulkCreate(result.importRows, { transaction: t });
 
     await t.commit();
     res.status(201).json({
       message: 'Importação concluída.',
-      importedCount: importedRevenues.length,
-      skippedExisting,
-      skippedInvalid,
-      skippedStatus,
-      totalRows: rows.length ? rows.length - 1 : importedRevenues.length,
+      importedCount: result.importRows.length,
+      skippedExisting: result.duplicateRows.length,
+      skippedInvalid: result.invalidRows.length,
+      skippedStatus: result.skippedStatus,
+      totalRows: result.totalRows,
     });
   } catch (error) {
     await t.rollback();
-    console.error("Erro na importação:", error);
-    res.status(500).json({ message: 'Erro ao processar planilha.', error: error.message });
+    sendError(res, 500, 'Erro ao processar planilha.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -273,7 +437,7 @@ exports.create = async (req, res) => {
     const newRevenue = await Revenue.create(revenueData);
     res.status(201).json(newRevenue);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao criar receita.', error: error.message });
+    sendError(res, 500, 'Erro ao criar receita.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -282,11 +446,11 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const [updated] = await Revenue.update(req.body, { where: { id: id } });
-    if (!updated) return res.status(404).json({ message: 'Receita não encontrada.' });
+    if (!updated) return sendError(res, 404, 'Receita não encontrada.', 'NOT_FOUND', null, req);
     const updatedRevenue = await Revenue.findByPk(id);
     res.status(200).json(updatedRevenue);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao atualizar receita.', error: error.message });
+    sendError(res, 500, 'Erro ao atualizar receita.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -295,9 +459,9 @@ exports.delete = async (req, res) => {
   try {
     const { id } = req.params;
     const deleted = await Revenue.destroy({ where: { id: id } });
-    if (!deleted) return res.status(404).json({ message: 'Receita não encontrada.' });
+    if (!deleted) return sendError(res, 404, 'Receita não encontrada.', 'NOT_FOUND', null, req);
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao deletar receita.', error: error.message });
+    sendError(res, 500, 'Erro ao deletar receita.', 'INTERNAL_ERROR', error, req);
   }
 };

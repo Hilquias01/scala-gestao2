@@ -1,4 +1,5 @@
 const { Vehicle } = require('../models');
+const { sendError } = require('../utils/response');
 
 // Criar um novo veículo
 exports.create = async (req, res) => {
@@ -7,7 +8,7 @@ exports.create = async (req, res) => {
 
     // Validação simples
     if (!plate || !model || !year || !initial_km) {
-      return res.status(400).json({ message: 'Campos obrigatórios estão faltando.' });
+      return sendError(res, 400, 'Campos obrigatórios estão faltando.', 'VALIDATION_ERROR', null, req);
     }
 
     const newVehicle = await Vehicle.create({ plate, model, manufacturer, year, initial_km, status });
@@ -15,9 +16,9 @@ exports.create = async (req, res) => {
   } catch (error) {
     // Verifica erro de placa duplicada
     if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({ message: `A placa '${req.body.plate}' já está cadastrada.` });
+      return sendError(res, 409, `A placa '${req.body.plate}' já está cadastrada.`, 'CONFLICT', error, req);
     }
-    res.status(500).json({ message: 'Erro ao criar veículo.', error: error.message });
+    sendError(res, 500, 'Erro ao criar veículo.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -27,7 +28,7 @@ exports.findAll = async (req, res) => {
     const vehicles = await Vehicle.findAll({ order: [['model', 'ASC']] });
     res.status(200).json(vehicles);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar veículos.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar veículos.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -36,11 +37,11 @@ exports.findOne = async (req, res) => {
   try {
     const vehicle = await Vehicle.findByPk(req.params.id);
     if (!vehicle) {
-      return res.status(404).json({ message: 'Veículo não encontrado.' });
+      return sendError(res, 404, 'Veículo não encontrado.', 'NOT_FOUND', null, req);
     }
     res.status(200).json(vehicle);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar veículo.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar veículo.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -51,12 +52,12 @@ exports.update = async (req, res) => {
     const [updated] = await Vehicle.update(req.body, { where: { id: id } });
 
     if (!updated) {
-      return res.status(404).json({ message: 'Veículo não encontrado.' });
+      return sendError(res, 404, 'Veículo não encontrado.', 'NOT_FOUND', null, req);
     }
     const updatedVehicle = await Vehicle.findByPk(id);
     res.status(200).json(updatedVehicle);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao atualizar veículo.', error: error.message });
+    sendError(res, 500, 'Erro ao atualizar veículo.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -67,10 +68,10 @@ exports.delete = async (req, res) => {
     const deleted = await Vehicle.destroy({ where: { id: id } });
 
     if (!deleted) {
-      return res.status(404).json({ message: 'Veículo não encontrado.' });
+      return sendError(res, 404, 'Veículo não encontrado.', 'NOT_FOUND', null, req);
     }
     res.status(204).send(); // 204 No Content - sucesso sem corpo de resposta
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao deletar veículo.', error: error.message });
+    sendError(res, 500, 'Erro ao deletar veículo.', 'INTERNAL_ERROR', error, req);
   }
 };

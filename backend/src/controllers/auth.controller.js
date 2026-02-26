@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User } = require('../models'); // Importa o User a partir do index.js
+const { sendError } = require('../utils/response');
 
 // backend/src/controllers/auth.controller.js
 
@@ -11,13 +12,13 @@ exports.register = async (req, res) => {
   try {
     // 2. Ajuste a validação.
     if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' });
+      return sendError(res, 400, 'Nome, e-mail e senha são obrigatórios.', 'VALIDATION_ERROR', null, req);
     }
 
     // Verifica se o usuário já existe
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ message: 'Este e-mail já está cadastrado.' });
+      return sendError(res, 409, 'Este e-mail já está cadastrado.', 'CONFLICT', null, req);
     }
 
     // Criptografa a senha
@@ -37,8 +38,7 @@ exports.register = async (req, res) => {
 
     res.status(201).json({ message: 'Usuário cadastrado com sucesso!', user: userResponse });
   } catch (error) {
-    console.error('Erro no registro:', error);
-    res.status(500).json({ message: 'Erro interno do servidor.' });
+    sendError(res, 500, 'Erro interno do servidor.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -49,19 +49,19 @@ exports.login = async (req, res) => {
   try {
     // Validação de entrada
     if (!email || !password) {
-      return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
+      return sendError(res, 400, 'E-mail e senha são obrigatórios.', 'VALIDATION_ERROR', null, req);
     }
 
     // Procura o usuário pelo e-mail
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      return res.status(404).json({ message: 'Usuário não encontrado.' });
+      return sendError(res, 404, 'Usuário não encontrado.', 'NOT_FOUND', null, req);
     }
 
     // Compara a senha enviada com o hash salvo no banco
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Credenciais inválidas.' });
+      return sendError(res, 401, 'Credenciais inválidas.', 'UNAUTHORIZED', null, req);
     }
 
     // Cria o payload do token
@@ -79,7 +79,9 @@ exports.login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '8h' }, // Token expira em 8 horas
       (err, token) => {
-        if (err) throw err;
+        if (err) {
+          return sendError(res, 500, 'Erro ao gerar token.', 'INTERNAL_ERROR', err, req);
+        }
         res.json({
           message: 'Login bem-sucedido!',
           token,
@@ -88,7 +90,6 @@ exports.login = async (req, res) => {
       }
     );
   } catch (error) {
-    console.error('Erro no login:', error);
-    res.status(500).json({ message: 'Erro interno do servidor.' });
+    sendError(res, 500, 'Erro interno do servidor.', 'INTERNAL_ERROR', error, req);
   }
 };

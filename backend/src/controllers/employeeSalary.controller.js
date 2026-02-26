@@ -1,20 +1,21 @@
 const { EmployeeSalary, Employee } = require('../models');
 const { Op } = require('sequelize');
+const { sendError } = require('../utils/response');
 
 // Create salary record
 exports.create = async (req, res) => {
   try {
     const { employee_id, period, amount, notes } = req.body;
     if (!employee_id || !period || !amount) {
-      return res.status(400).json({ message: 'Funcionario, periodo e valor sao obrigatorios.' });
+      return sendError(res, 400, 'Funcionario, periodo e valor sao obrigatorios.', 'VALIDATION_ERROR', null, req);
     }
     const newSalary = await EmployeeSalary.create({ employee_id, period, amount, notes: notes || null });
     res.status(201).json(newSalary);
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({ message: 'Ja existe salario para este funcionario neste periodo.' });
+      return sendError(res, 409, 'Ja existe salario para este funcionario neste periodo.', 'CONFLICT', error, req);
     }
-    res.status(500).json({ message: 'Erro ao cadastrar salario.', error: error.message });
+    sendError(res, 500, 'Erro ao cadastrar salario.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -41,7 +42,7 @@ exports.findAll = async (req, res) => {
     });
     res.status(200).json(salaries);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar salarios.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar salarios.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -50,16 +51,16 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const [updated] = await EmployeeSalary.update(req.body, { where: { id } });
-    if (!updated) return res.status(404).json({ message: 'Registro nao encontrado.' });
+    if (!updated) return sendError(res, 404, 'Registro nao encontrado.', 'NOT_FOUND', null, req);
     const updatedSalary = await EmployeeSalary.findByPk(id, {
       include: [{ model: Employee, as: 'employee', attributes: ['id', 'name'] }],
     });
     res.status(200).json(updatedSalary);
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({ message: 'Ja existe salario para este funcionario neste periodo.' });
+      return sendError(res, 409, 'Ja existe salario para este funcionario neste periodo.', 'CONFLICT', error, req);
     }
-    res.status(500).json({ message: 'Erro ao atualizar salario.', error: error.message });
+    sendError(res, 500, 'Erro ao atualizar salario.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -68,9 +69,9 @@ exports.delete = async (req, res) => {
   try {
     const { id } = req.params;
     const deleted = await EmployeeSalary.destroy({ where: { id } });
-    if (!deleted) return res.status(404).json({ message: 'Registro nao encontrado.' });
+    if (!deleted) return sendError(res, 404, 'Registro nao encontrado.', 'NOT_FOUND', null, req);
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao deletar salario.', error: error.message });
+    sendError(res, 500, 'Erro ao deletar salario.', 'INTERNAL_ERROR', error, req);
   }
 };

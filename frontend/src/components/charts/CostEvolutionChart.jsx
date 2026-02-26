@@ -5,7 +5,7 @@ import api from '../../services/api';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const CostEvolutionChart = () => {
+const CostEvolutionChart = ({ dateRange }) => {
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: [],
@@ -16,7 +16,11 @@ const CostEvolutionChart = () => {
     const fetchChartData = async () => {
       try {
         setLoading(true);
-        const { data } = await api.get('/dashboard/cost-evolution');
+        const { data } = await api.get('/dashboard/cost-evolution', {
+          params: dateRange?.start && dateRange?.end
+            ? { startDate: dateRange.start, endDate: dateRange.end }
+            : undefined,
+        });
         
         // ## CORREÇÃO: Montando o gráfico com duas linhas ##
         setChartData({
@@ -45,7 +49,7 @@ const CostEvolutionChart = () => {
       }
     };
     fetchChartData();
-  }, []);
+  }, [dateRange]);
 
   const options = {
     responsive: true,
@@ -56,7 +60,9 @@ const CostEvolutionChart = () => {
       title: {
         display: true,
         // ## CORREÇÃO: Título do gráfico atualizado ##
-        text: 'Evolução de Custos vs. Receitas (Últimos 6 Meses)',
+        text: dateRange?.start && dateRange?.end
+          ? 'Evolução de Custos vs. Receitas (Período Selecionado)'
+          : 'Evolução de Custos vs. Receitas (Últimos 6 Meses)',
       },
     },
      scales: {

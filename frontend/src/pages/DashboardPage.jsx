@@ -90,6 +90,18 @@ const DashboardPage = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
         <div style={kpiCardStyles}><p style={kpiValueStyles}>R$ {kpis?.totalMonthRevenue || "0.00"}</p><h3 style={kpiLabelStyles}>Receita no Período</h3></div>
         <div style={kpiCardStyles}><p style={kpiValueStyles}>R$ {kpis?.totalMonthCost || "0.00"}</p><h3 style={kpiLabelStyles}>Custo no Período</h3></div>
+        <div style={kpiCardStyles}>
+          <p style={{ ...kpiValueStyles, color: Number(kpis?.netResult) >= 0 ? '#2e7d32' : '#c62828' }}>
+            R$ {kpis?.netResult || "0.00"}
+          </p>
+          <h3 style={kpiLabelStyles}>Resultado no Período</h3>
+        </div>
+        <div style={kpiCardStyles}>
+          <p style={kpiValueStyles}>
+            {((kpis?.margin ?? 0) * 100).toFixed(2)}%
+          </p>
+          <h3 style={kpiLabelStyles}>Margem</h3>
+        </div>
         <div style={kpiCardStyles}><p style={kpiValueStyles}>{kpis?.totalVehicles || 0}</p><h3 style={kpiLabelStyles}>Veículos Ativos</h3></div>
         <div style={kpiCardStyles}><p style={kpiValueStyles}>{kpis?.totalEmployees || 0}</p><h3 style={kpiLabelStyles}>Funcionários Ativos</h3></div>
       </div>
@@ -97,10 +109,10 @@ const DashboardPage = () => {
       {/* LINHA 2: Gráficos Principais */}
       <div style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
         <div style={chartContainerStyles}>
-          <CostEvolutionChart />
+          <CostEvolutionChart dateRange={dateRange} />
         </div>
         <div style={chartContainerStyles}>
-          <RevenueVsExpensesChart />
+          <RevenueVsExpensesChart dateRange={dateRange} />
         </div>
       </div>
 

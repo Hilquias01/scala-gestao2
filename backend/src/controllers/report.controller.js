@@ -4,6 +4,7 @@ const puppeteer = require('puppeteer');
 const { Op } = require('sequelize');
 const { Vehicle, Refueling, Maintenance, Employee, Revenue, GeneralExpense } = require('../models');
 const { format, parseISO, eachDayOfInterval, isSameDay } = require('date-fns');
+const { sendError } = require('../utils/response');
 
 const COMPANY_INFO = {
   name: 'Scala Gestao',
@@ -50,7 +51,7 @@ exports.generateReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     if (!startDate || !endDate) {
-      return res.status(400).json({ message: 'Datas de início e fim são obrigatórias.' });
+      return sendError(res, 400, 'Datas de início e fim são obrigatórias.', 'VALIDATION_ERROR', null, req);
     }
 
     // =================================================================
@@ -233,8 +234,7 @@ exports.generateReport = async (req, res) => {
     res.end(pdfBuffer);
 
   } catch (error) {
-    console.error("Erro ao gerar relatório completo:", error);
-    res.status(500).json({ message: 'Erro interno ao gerar o relatório.' });
+    sendError(res, 500, 'Erro interno ao gerar o relatório.', 'INTERNAL_ERROR', error, req);
   }
 };
 

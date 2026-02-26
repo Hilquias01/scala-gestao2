@@ -1,16 +1,17 @@
 const { Employee } = require('../models');
+const { sendError } = require('../utils/response');
 
 // Criar um novo funcionário
 exports.create = async (req, res) => {
   try {
     const { name, role, salary, status } = req.body;
     if (!name || !role) {
-      return res.status(400).json({ message: 'Nome e Função são obrigatórios.' });
+      return sendError(res, 400, 'Nome e Função são obrigatórios.', 'VALIDATION_ERROR', null, req);
     }
     const newEmployee = await Employee.create({ name, role, salary, status });
     res.status(201).json(newEmployee);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao criar funcionário.', error: error.message });
+    sendError(res, 500, 'Erro ao criar funcionário.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -20,7 +21,7 @@ exports.findAll = async (req, res) => {
     const employees = await Employee.findAll({ order: [['name', 'ASC']] });
     res.status(200).json(employees);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao buscar funcionários.', error: error.message });
+    sendError(res, 500, 'Erro ao buscar funcionários.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -31,12 +32,12 @@ exports.update = async (req, res) => {
     const [updated] = await Employee.update(req.body, { where: { id: id } });
 
     if (!updated) {
-      return res.status(404).json({ message: 'Funcionário não encontrado.' });
+      return sendError(res, 404, 'Funcionário não encontrado.', 'NOT_FOUND', null, req);
     }
     const updatedEmployee = await Employee.findByPk(id);
     res.status(200).json(updatedEmployee);
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao atualizar funcionário.', error: error.message });
+    sendError(res, 500, 'Erro ao atualizar funcionário.', 'INTERNAL_ERROR', error, req);
   }
 };
 
@@ -47,10 +48,10 @@ exports.delete = async (req, res) => {
     const deleted = await Employee.destroy({ where: { id: id } });
 
     if (!deleted) {
-      return res.status(404).json({ message: 'Funcionário não encontrado.' });
+      return sendError(res, 404, 'Funcionário não encontrado.', 'NOT_FOUND', null, req);
     }
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao deletar funcionário.', error: error.message });
+    sendError(res, 500, 'Erro ao deletar funcionário.', 'INTERNAL_ERROR', error, req);
   }
 };

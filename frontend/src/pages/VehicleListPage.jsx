@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import VehicleFormModal from '../components/VehicleFormModal';
 import { useNavigate } from 'react-router-dom';
+import TablePagination from '../components/TablePagination';
 
 // MUI Imports for styled icon buttons
 import IconButton from '@mui/material/IconButton';
@@ -18,6 +19,12 @@ const VehicleListPage = () => {
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sortBy, setSortBy] = useState('plate');
+  const [sortDir, setSortDir] = useState('asc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const isAdmin = isAuthenticated && user?.role === 'administrador';
 
@@ -82,76 +89,154 @@ const VehicleListPage = () => {
     navigate(`/vehicle/${vehicleId}`);
   };
 
+  const handleSort = (key) => {
+    if (sortBy === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortIndicator = (key) => {
+    if (sortBy !== key) return '';
+    return sortDir === 'asc' ? '▲' : '▼';
+  };
+
+  const filteredVehicles = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return vehicles.filter((vehicle) => {
+      if (statusFilter && vehicle.status !== statusFilter) return false;
+      if (!term) return true;
+      const haystack = [
+        vehicle.plate,
+        vehicle.model,
+        vehicle.year,
+        vehicle.status,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [vehicles, searchTerm, statusFilter]);
+
+  const sortedVehicles = useMemo(() => {
+    const copy = [...filteredVehicles];
+    copy.sort((a, b) => {
+      const aValue = a[sortBy];
+      const bValue = b[sortBy];
+      const aComparable = typeof aValue === 'number' ? aValue : String(aValue ?? '').toLowerCase();
+      const bComparable = typeof bValue === 'number' ? bValue : String(bValue ?? '').toLowerCase();
+      if (aComparable < bComparable) return sortDir === 'asc' ? -1 : 1;
+      if (aComparable > bComparable) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return copy;
+  }, [filteredVehicles, sortBy, sortDir]);
+
+  const paginatedVehicles = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedVehicles.slice(start, start + pageSize);
+  }, [sortedVehicles, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, pageSize, vehicles.length]);
+
   if (loading) return <div>Carregando frota...</div>;
   if (error) return <div className="error-message">{error}</div>;
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Gestão de Frota</h1>
-      
-      {isAdmin && (
-        <button className="btn" onClick={(e) => handleOpenModal(e)} style={{ maxWidth: '200px', marginBottom: '1rem' }}>
-          Adicionar Veículo
-        </button>
-      )}
+    <div className="page">
+      <div className="page-header">
+        <h1 className="page-title">Gestão de Frota</h1>
+        {isAdmin && (
+          <button className="btn" onClick={(e) => handleOpenModal(e)} style={{ maxWidth: '220px', width: 'auto' }}>
+            Adicionar Veículo
+          </button>
+        )}
+      </div>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ backgroundColor: 'var(--azul-scala)', color: 'var(--branco)' }}>
-            <th style={{ padding: '0.75rem' }}>Placa</th>
-            <th style={{ padding: '0.75rem' }}>Modelo</th>
-            <th style={{ padding: '0.75rem' }}>Ano</th>
-            <th style={{ padding: '0.75rem' }}>Status</th>
-            {isAdmin && <th style={{ padding: '0.75rem' }}>Ações</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {vehicles.length > 0 ? (
-            vehicles.map((vehicle) => (
-              <tr 
-                key={vehicle.id} 
-                onClick={() => handleRowClick(vehicle.id)} 
-                style={{ cursor: 'pointer', borderBottom: '1px solid #ddd', textAlign: 'center' }}
-              >
-                <td style={{ padding: '0.75rem' }}>{vehicle.plate}</td>
-                <td style={{ padding: '0.75rem' }}>{vehicle.model}</td>
-                <td style={{ padding: '0.75rem' }}>{vehicle.year}</td>
-                <td style={{ padding: '0.75rem' }}>{vehicle.status}</td>
-                {isAdmin && (
-                  <td style={{ padding: '0.75rem' }}>
-                    {/* ## CORRECTION: Replaced old buttons with MUI IconButtons ## */}
-                    <Tooltip title="Editar Veículo">
-                      <IconButton 
-                        onClick={(e) => handleOpenModal(e, vehicle)} 
-                        color="primary"
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    
-                    <Tooltip title="Excluir Veículo">
-                      <IconButton 
-                        onClick={(e) => handleDeleteVehicle(e, vehicle.id)} 
-                        color="error"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </td>
-                )}
-              </tr>
-            ))
-          ) : (
+      <div className="table-card">
+        <div className="table-toolbar">
+          <input
+            type="text"
+            placeholder="Buscar placa, modelo ou status..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Todos os status</option>
+            <option value="ativo">Ativo</option>
+            <option value="inativo">Inativo</option>
+            <option value="manutencao">Manutenção</option>
+          </select>
+        </div>
+        <table className="data-table">
+          <thead>
             <tr>
-              <td colSpan={isAdmin ? 5 : 4} style={{ textAlign: 'center', padding: '1rem' }}>
-                Nenhum veículo cadastrado.
-              </td>
+              <th className="sortable" onClick={() => handleSort('plate')}>Placa <span className="sort-indicator">{sortIndicator('plate')}</span></th>
+              <th className="sortable" onClick={() => handleSort('model')}>Modelo <span className="sort-indicator">{sortIndicator('model')}</span></th>
+              <th className="sortable" onClick={() => handleSort('year')}>Ano <span className="sort-indicator">{sortIndicator('year')}</span></th>
+              <th className="sortable" onClick={() => handleSort('status')}>Status <span className="sort-indicator">{sortIndicator('status')}</span></th>
+              {isAdmin && <th>Ações</th>}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {paginatedVehicles.length > 0 ? (
+              paginatedVehicles.map((vehicle) => (
+                <tr
+                  key={vehicle.id}
+                  onClick={() => handleRowClick(vehicle.id)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td>{vehicle.plate}</td>
+                  <td>{vehicle.model}</td>
+                  <td>{vehicle.year}</td>
+                  <td>{vehicle.status}</td>
+                  {isAdmin && (
+                    <td className="action-cell">
+                      <Tooltip title="Editar Veículo">
+                        <IconButton
+                          onClick={(e) => handleOpenModal(e, vehicle)}
+                          color="primary"
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      </Tooltip>
 
-      <VehicleFormModal 
+                      <Tooltip title="Excluir Veículo">
+                        <IconButton
+                          onClick={(e) => handleDeleteVehicle(e, vehicle.id)}
+                          color="error"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </td>
+                  )}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={isAdmin ? 5 : 4} className="table-empty">
+                  Nenhum veículo cadastrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={sortedVehicles.length}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+        />
+      </div>
+
+      <VehicleFormModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         onSave={handleSaveVehicle}
