@@ -47,6 +47,8 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
     onSave(formData);
   };
 
+  const activeEmployees = employees.filter((emp) => emp?.status !== 'inativo');
+ 
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
       <div style={modalStyles.content} onClick={(e) => e.stopPropagation()}>
@@ -56,10 +58,10 @@ const RevenueFormModal = ({ isOpen, onClose, onSave, revenue }) => {
           <div className="form-group"><label>Descrição</label><input name="description" value={formData.description} onChange={handleChange} required /></div>
           <div className="form-group"><label>Valor (R$)</label><input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleChange} required /></div>
            <div className="form-group">
-            <label>Funcionário Responsável (Opcional)</label>
+              <label>Funcionário Responsável (Opcional)</label>
             <select name="employee_id" value={formData.employee_id} onChange={handleChange}>
               <option value="">Nenhum</option>
-              {employees.map(emp => (
+              {activeEmployees.map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}
             </select>

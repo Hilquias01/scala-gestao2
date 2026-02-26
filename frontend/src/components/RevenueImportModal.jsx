@@ -9,6 +9,7 @@ const modalStyles = {
 const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState('');
+  const [employeeByPedido, setEmployeeByPedido] = useState({});
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -19,6 +20,7 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
   useEffect(() => {
     if (!isOpen) return;
     setEmployeeId('');
+    setEmployeeByPedido({});
     setFile(null);
     setError('');
     setPreview(null);
@@ -103,6 +105,9 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
     if (employeeId) {
       formData.append('employee_id', employeeId);
     }
+    if (preview?.format === 'pedidos_venda' && Object.keys(employeeByPedido).length > 0) {
+      formData.append('employee_by_pedido', JSON.stringify(employeeByPedido));
+    }
 
     try {
       setLoading(true);
@@ -123,22 +128,58 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
   const previewRows = preview?.preview || [];
   const duplicateRows = preview?.duplicates || [];
 
+  const normalizeText = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const isDriver = (emp) => normalizeText(emp?.role).includes('motorista');
+  const activeEmployees = employees.filter((emp) => emp?.status !== 'inativo');
+  const driverEmployees = activeEmployees.filter(isDriver);
+  const employeeOptions = driverEmployees.length > 0 ? driverEmployees : activeEmployees;
+
+  const applyDefaultDriverToEmpty = () => {
+    if (!employeeId || preview?.format !== 'pedidos_venda') return;
+    setEmployeeByPedido((prev) => {
+      const next = { ...prev };
+      previewRows.forEach((row) => {
+        if (!row?.numero) return;
+        const key = String(row.numero);
+        if (!next[key]) next[key] = String(employeeId);
+      });
+      return next;
+    });
+  };
+
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
       <div style={modalStyles.content} onClick={(e) => e.stopPropagation()}>
         <h2 className="form-title">Importar Planilha de Receitas</h2>
         <p style={{ color: '#6c757d', marginTop: 0 }}>
-          Selecione o arquivo do outro sistema. O funcionário é opcional.
+          Selecione o arquivo do outro sistema. O motorista é opcional (pode ser definido por pedido na pré-visualização).
         </p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Funcionário Responsável (Opcional)</label>
+            <label>Motorista Padrão (Opcional)</label>
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
               <option value="">Nenhum</option>
-              {employees.map((emp) => (
+              {employeeOptions.map((emp) => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}
             </select>
+            {preview?.format === 'pedidos_venda' && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={applyDefaultDriverToEmpty}
+                  disabled={!employeeId || previewRows.length === 0}
+                  style={{ background: 'none', border: 'none', color: '#0f6ab4', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  Aplicar motorista padrão nos pedidos sem motorista
+                </button>
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Arquivo</label>
@@ -148,6 +189,7 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
               onChange={(e) => {
                 setFile(e.target.files?.[0] || null);
                 setPreview(null);
+                setEmployeeByPedido({});
               }}
               required
             />
@@ -192,6 +234,7 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                       <th>Descrição</th>
                       <th>Data</th>
                       <th>Valor</th>
+                      {activeTab === 'import' && preview?.format === 'pedidos_venda' && <th>Motorista</th>}
                       {activeTab === 'duplicates' && <th>Motivo</th>}
                     </tr>
                   </thead>
@@ -203,12 +246,43 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                         <td>{row.description || '-'}</td>
                         <td>{formatDate(row.date)}</td>
                         <td>{formatAmount(row.amount)}</td>
+                        {activeTab === 'import' && preview?.format === 'pedidos_venda' && (
+                          <td>
+                            <select
+                              value={employeeByPedido[String(row.numero || '')] || ''}
+                              onChange={(e) => {
+                                const pedido = String(row.numero || '');
+                                const value = e.target.value;
+                                setEmployeeByPedido((prev) => {
+                                  const next = { ...prev };
+                                  if (!pedido) return next;
+                                  if (!value) {
+                                    delete next[pedido];
+                                  } else {
+                                    next[pedido] = value;
+                                  }
+                                  return next;
+                                });
+                              }}
+                              disabled={!row.numero}
+                            >
+                              <option value="">(usar padrão)</option>
+                              {employeeOptions.map((emp) => (
+                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                        )}
                         {activeTab === 'duplicates' && <td>{row.reason || '-'}</td>}
                       </tr>
                     ))}
                     {(activeTab === 'duplicates' ? duplicateRows.length === 0 : previewRows.length === 0) && (
                       <tr>
-                        <td colSpan={activeTab === 'duplicates' ? (preview?.format === 'pedidos_venda' ? 6 : 5) : (preview?.format === 'pedidos_venda' ? 5 : 4)} style={{ textAlign: 'center', padding: '1rem' }}>
+                        <td colSpan={
+                          activeTab === 'duplicates'
+                            ? (preview?.format === 'pedidos_venda' ? 6 : 5)
+                            : (preview?.format === 'pedidos_venda' ? 6 : 4)
+                        } style={{ textAlign: 'center', padding: '1rem' }}>
                           Nenhum item para exibir.
                         </td>
                       </tr>

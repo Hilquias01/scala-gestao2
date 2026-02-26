@@ -45,7 +45,6 @@ const RevenuesPage = () => {
 
   useEffect(() => {
     fetchRevenues();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleOpenModal = (revenue = null) => {
@@ -69,7 +68,7 @@ const RevenuesPage = () => {
       handleCloseModal();
     } catch (err) {
       console.error("Erro ao salvar receita:", err);
-      alert('Erro ao salvar receita.');
+      alert(err.response?.data?.message || 'Erro ao salvar receita.');
     }
   };
 

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 const { Op } = require('sequelize');
-const { Vehicle, Refueling, Maintenance, Employee, Revenue, GeneralExpense } = require('../models');
+const { Vehicle, Refueling, Maintenance, Employee, EmployeeSalary, Revenue, GeneralExpense } = require('../models');
 const { format, parseISO, eachDayOfInterval, isSameDay } = require('date-fns');
 const { sendError } = require('../utils/response');
 
@@ -60,9 +60,28 @@ exports.generateReport = async (req, res) => {
     const revenues = await Revenue.findAll({ where: { date: { [Op.between]: [startDate, endDate] } }, include: [Employee, Vehicle], order: [['date', 'ASC']] });
     const refuelings = await Refueling.findAll({ where: { date: { [Op.between]: [startDate, endDate] } }, include: [Vehicle, Employee], order: [['date', 'ASC']] });
     const maintenances = await Maintenance.findAll({ where: { date: { [Op.between]: [startDate, endDate] } }, include: [Vehicle], order: [['date', 'ASC']] });
-    const generalExpenses = await GeneralExpense.findAll({ where: { date: { [Op.between]: [startDate, endDate] } }, order: [['date', 'ASC']] });
+    let generalExpenses = await GeneralExpense.findAll({ where: { date: { [Op.between]: [startDate, endDate] } }, order: [['date', 'ASC']] });
     const employees = await Employee.findAll({ order: [['name', 'ASC']] });
     const vehicles = await Vehicle.findAll({ order: [['plate', 'ASC']] });
+
+    const startPeriod = String(startDate).slice(0, 7);
+    const endPeriod = String(endDate).slice(0, 7);
+    const salaries = await EmployeeSalary.findAll({
+      where: { period: { [Op.between]: [startPeriod, endPeriod] } },
+      include: [{ model: Employee, as: 'employee', attributes: ['id', 'name'] }],
+      order: [['period', 'ASC'], ['createdAt', 'ASC']],
+    });
+
+    const salaryExpenses = salaries.map((salary) => ({
+      date: `${salary.period}-01`,
+      category: 'Salários',
+      description: `Salário - ${salary.employee?.name || `Funcionário #${salary.employee_id}`}`,
+      amount: salary.amount,
+    }));
+
+    if (salaryExpenses.length > 0) {
+      generalExpenses = [...generalExpenses, ...salaryExpenses].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    }
     
     // =================================================================
     // 2. PROCESSAMENTO E CÁLCULOS ANALÍTICOS

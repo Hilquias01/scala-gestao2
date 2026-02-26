@@ -1,4 +1,4 @@
-const { Vehicle, Employee, Refueling, Maintenance, GeneralExpense, Revenue } = require('../models');
+const { Vehicle, Employee, EmployeeSalary, Refueling, Maintenance, GeneralExpense, Revenue } = require('../models');
 const { Op } = require('sequelize');
 const { subMonths, format, startOfMonth, endOfMonth, addMonths, parseISO } = require('date-fns');
 const { sendError } = require('../utils/response');
@@ -28,9 +28,12 @@ exports.getKpis = async (req, res) => {
     const refuelingCost = await Refueling.sum('total_cost', { where: { date: { [Op.between]: [start, end] } } });
     const maintenanceCost = await Maintenance.sum('cost', { where: { date: { [Op.between]: [start, end] } } });
     const generalExpenseAmount = await GeneralExpense.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
+    const salaryAmount = await EmployeeSalary.sum('amount', {
+      where: { period: { [Op.between]: [String(start).slice(0, 7), String(end).slice(0, 7)] } },
+    });
     const totalRevenue = await Revenue.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
     
-    const totalMonthCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0);
+    const totalMonthCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0) + (salaryAmount || 0);
     const netResult = (totalRevenue || 0) - totalMonthCost;
     const margin = totalRevenue ? (netResult / totalRevenue) : 0;
 
@@ -85,7 +88,8 @@ exports.getCostEvolution = async (req, res) => {
       const refuelingCost = await Refueling.sum('total_cost', { where: { date: { [Op.between]: [start, end] } } });
       const maintenanceCost = await Maintenance.sum('cost', { where: { date: { [Op.between]: [start, end] } } });
       const generalExpenseAmount = await GeneralExpense.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
-      const totalCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0);
+      const salaryAmount = await EmployeeSalary.sum('amount', { where: { period: format(start, 'yyyy-MM') } });
+      const totalCost = (refuelingCost || 0) + (maintenanceCost || 0) + (generalExpenseAmount || 0) + (salaryAmount || 0);
       costData.push(totalCost);
 
       const totalRevenue = await Revenue.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
@@ -124,9 +128,10 @@ exports.getRevenueVsExpenses = async (req, res) => {
       const refueling = await Refueling.sum('total_cost', { where: { date: { [Op.between]: [start, end] } } });
       const maintenance = await Maintenance.sum('cost', { where: { date: { [Op.between]: [start, end] } } });
       const general = await GeneralExpense.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
+      const salary = await EmployeeSalary.sum('amount', { where: { period: format(start, 'yyyy-MM') } });
 
       revenueData.push(revenue || 0);
-      expenseData.push((refueling || 0) + (maintenance || 0) + (general || 0));
+      expenseData.push((refueling || 0) + (maintenance || 0) + (general || 0) + (salary || 0));
     }
     res.json({ labels, revenueData, expenseData });
   } catch (error) {
@@ -142,8 +147,11 @@ exports.getSpendingByCategory = async (req, res) => {
     const refuelingTotal = await Refueling.sum('total_cost', { where: { date: { [Op.between]: [start, end] } } });
     const maintenanceTotal = await Maintenance.sum('cost', { where: { date: { [Op.between]: [start, end] } } });
     const generalExpenseTotal = await GeneralExpense.sum('amount', { where: { date: { [Op.between]: [start, end] } } });
-    const data = [refuelingTotal || 0, maintenanceTotal || 0, generalExpenseTotal || 0];
-    const labels = ['Abastecimentos', 'Manutenções', 'Despesas Gerais'];
+    const salaryTotal = await EmployeeSalary.sum('amount', {
+      where: { period: { [Op.between]: [String(start).slice(0, 7), String(end).slice(0, 7)] } },
+    });
+    const data = [refuelingTotal || 0, maintenanceTotal || 0, (generalExpenseTotal || 0) + (salaryTotal || 0)];
+    const labels = ['Abastecimentos', 'Manutenções', 'Despesas Gerais (incl. salários)'];
     res.json({ labels, data });
   } catch (error) { 
     sendError(res, 500, 'Erro ao buscar dados do gráfico.', 'INTERNAL_ERROR', error, req);

@@ -19,6 +19,17 @@ const RefuelingFormModal = ({ isOpen, onClose, onSave, vehicleId, refueling }) =
   });
   const [employees, setEmployees] = useState([]);
 
+  const normalizeText = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const isDriver = (emp) => normalizeText(emp?.role).includes('motorista');
+  const activeEmployees = employees.filter((emp) => emp?.status !== 'inativo');
+  const driverEmployees = activeEmployees.filter(isDriver);
+  const employeeOptions = driverEmployees.length > 0 ? driverEmployees : activeEmployees;
+
   useEffect(() => {
     if (isOpen) {
       const fetchEmployees = async () => {
@@ -94,7 +105,7 @@ const RefuelingFormModal = ({ isOpen, onClose, onSave, vehicleId, refueling }) =
             <label>Motorista</label>
             <select name="employee_id" value={formData.employee_id} onChange={handleChange} required>
               <option value="">Selecione um motorista</option>
-              {employees.map(emp => (
+              {employeeOptions.map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.name}</option>
               ))}
             </select>

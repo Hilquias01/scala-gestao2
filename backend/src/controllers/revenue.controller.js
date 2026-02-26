@@ -113,7 +113,18 @@ const buildHeaderMap = (headers) => headers.reduce((acc, header, idx) => {
 
 const buildDuplicateKey = (date, amount, description) => `${date}|${amount}|${String(description || '').toLowerCase()}`;
 
-const analyzeImport = async ({ buffer, employeeId, transaction }) => {
+const analyzeImport = async ({ buffer, employeeId, employeeByPedido, transaction }) => {
+  const toNullableId = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) return null;
+    return parsed;
+  };
+
+  const employeeByPedidoMap = employeeByPedido && typeof employeeByPedido === 'object' && !Array.isArray(employeeByPedido)
+    ? employeeByPedido
+    : null;
+
   const workbook = xlsx.read(buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -183,11 +194,13 @@ const analyzeImport = async ({ buffer, employeeId, transaction }) => {
         continue;
       }
 
+      const perPedidoEmployeeId = employeeByPedidoMap ? toNullableId(employeeByPedidoMap[numero]) : null;
+
       importRows.push({
         date,
         description,
         amount,
-        employee_id: employeeId || null,
+        employee_id: perPedidoEmployeeId || employeeId || null,
         vehicle_id: null,
       });
       previewRows.push({ row: i + 1, numero, description, date, amount });
@@ -364,7 +377,18 @@ exports.previewImport = async (req, res) => {
     }
 
     const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
-    const result = await analyzeImport({ buffer: req.file.buffer, employeeId });
+    let employeeByPedido = null;
+    if (req.body.employee_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.employee_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          employeeByPedido = parsed;
+        }
+      } catch (error) {
+        employeeByPedido = null;
+      }
+    }
+    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, employeeByPedido });
 
     res.status(200).json({
       message: 'Pré-visualização gerada.',
@@ -392,7 +416,18 @@ exports.importRevenues = async (req, res) => {
     }
 
     const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
-    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, transaction: t });
+    let employeeByPedido = null;
+    if (req.body.employee_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.employee_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          employeeByPedido = parsed;
+        }
+      } catch (error) {
+        employeeByPedido = null;
+      }
+    }
+    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, employeeByPedido, transaction: t });
 
     if (result.importRows.length === 0) {
       await t.commit();
@@ -445,7 +480,23 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const [updated] = await Revenue.update(req.body, { where: { id: id } });
+    const toNullableId = (value) => {
+      if (value === null || value === undefined || value === '') return null;
+      const parsed = parseInt(value, 10);
+      if (Number.isNaN(parsed) || parsed <= 0) return null;
+      return parsed;
+    };
+
+    const { date, description, amount, vehicle_id, employee_id } = req.body;
+    const updateData = {
+      ...(date !== undefined ? { date } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(amount !== undefined ? { amount } : {}),
+      ...(vehicle_id !== undefined ? { vehicle_id: toNullableId(vehicle_id) } : {}),
+      ...(employee_id !== undefined ? { employee_id: toNullableId(employee_id) } : {}),
+    };
+
+    const [updated] = await Revenue.update(updateData, { where: { id: id } });
     if (!updated) return sendError(res, 404, 'Receita não encontrada.', 'NOT_FOUND', null, req);
     const updatedRevenue = await Revenue.findByPk(id);
     res.status(200).json(updatedRevenue);
