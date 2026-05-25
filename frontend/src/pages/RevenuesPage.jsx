@@ -282,9 +282,10 @@ const RevenuesPage = () => {
           <thead>
             <tr>
               <th className="sortable" onClick={() => handleSort('date')}>Data <span className="sort-indicator">{sortIndicator('date')}</span></th>
+              <th className="sortable" onClick={() => handleSort('kind')}>Tipo <span className="sort-indicator">{sortIndicator('kind')}</span></th>
               <th className="sortable" onClick={() => handleSort('description')}>Descrição <span className="sort-indicator">{sortIndicator('description')}</span></th>
-              <th className="sortable" onClick={() => handleSort('employee')}>Responsável <span className="sort-indicator">{sortIndicator('employee')}</span></th>
-              <th className="sortable" onClick={() => handleSort('vehicle')}>Veículo Associado <span className="sort-indicator">{sortIndicator('vehicle')}</span></th>
+              <th className="sortable" onClick={() => handleSort('employee')}>Motorista <span className="sort-indicator">{sortIndicator('employee')}</span></th>
+              <th className="sortable" onClick={() => handleSort('vehicle')}>Veículo <span className="sort-indicator">{sortIndicator('vehicle')}</span></th>
               <th className="sortable" onClick={() => handleSort('amount')}>Valor <span className="sort-indicator">{sortIndicator('amount')}</span></th>
               {isAdmin && <th>Ações</th>}
             </tr>
@@ -294,9 +295,16 @@ const RevenuesPage = () => {
               paginatedRevenues.map((revenue) => (
                 <tr key={revenue.id}>
                   <td>{new Date(revenue.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
+                  <td>
+                    {revenue.kind === 'entrega' && 'Entrega'}
+                    {revenue.kind === 'retirada' && (
+                      <>Retirada ({revenue.pickup_location === 'areial' ? 'Areial' : revenue.pickup_location === 'deposito' ? 'Depósito' : '-'})</>
+                    )}
+                    {!revenue.kind && '-'}
+                  </td>
                   <td>{revenue.description}</td>
-                  <td>{revenue.Employee?.name || 'N/A'}</td>
-                  <td>{revenue.Vehicle ? `${revenue.Vehicle.plate} - ${revenue.Vehicle.model}` : '-'}</td>
+                  <td>{revenue.kind === 'retirada' ? '-' : (revenue.Employee?.name || '-')}</td>
+                  <td>{revenue.kind === 'retirada' ? '-' : (revenue.Vehicle ? `${revenue.Vehicle.plate} - ${revenue.Vehicle.model}` : '-')}</td>
                   <td style={{ fontWeight: 'bold', color: '#2e7d32' }}>
                     R$ {parseFloat(revenue.amount).toFixed(2)}
                   </td>
@@ -310,7 +318,7 @@ const RevenuesPage = () => {
               ))
             ) : (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="table-empty">
+                <td colSpan={isAdmin ? 7 : 6} className="table-empty">
                   Nenhuma receita encontrada para os filtros selecionados.
                 </td>
               </tr>

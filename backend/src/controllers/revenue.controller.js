@@ -113,17 +113,53 @@ const buildHeaderMap = (headers) => headers.reduce((acc, header, idx) => {
 
 const buildDuplicateKey = (date, amount, description) => `${date}|${amount}|${String(description || '').toLowerCase()}`;
 
-const analyzeImport = async ({ buffer, employeeId, employeeByPedido, transaction }) => {
-  const toNullableId = (value) => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = parseInt(value, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) return null;
-    return parsed;
-  };
+const toNullableId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
+const normalizeText = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
+const isDriverRole = (value) => normalizeText(value).includes('motorista');
+
+const normalizeRevenueKind = (value) => {
+  const normalized = normalizeText(value);
+  if (normalized === 'entrega' || normalized === 'retirada') return normalized;
+  return null;
+};
+
+const normalizePickupLocation = (value) => {
+  const normalized = normalizeText(value);
+  if (normalized === 'areial' || normalized === 'deposito') return normalized;
+  return null;
+};
+
+const analyzeImport = async ({ buffer, employeeId, employeeByPedido, vehicleId, vehicleByPedido, kind, pickupLocation, kindByPedido, pickupLocationByPedido, transaction }) => {
 
   const employeeByPedidoMap = employeeByPedido && typeof employeeByPedido === 'object' && !Array.isArray(employeeByPedido)
     ? employeeByPedido
     : null;
+
+  const vehicleByPedidoMap = vehicleByPedido && typeof vehicleByPedido === 'object' && !Array.isArray(vehicleByPedido)
+    ? vehicleByPedido
+    : null;
+
+  const kindByPedidoMap = kindByPedido && typeof kindByPedido === 'object' && !Array.isArray(kindByPedido)
+    ? kindByPedido
+    : null;
+
+  const pickupLocationByPedidoMap = pickupLocationByPedido && typeof pickupLocationByPedido === 'object' && !Array.isArray(pickupLocationByPedido)
+    ? pickupLocationByPedido
+    : null;
+
+  const defaultKind = normalizeRevenueKind(kind);
+  const defaultPickupLocation = normalizePickupLocation(pickupLocation);
 
   const workbook = xlsx.read(buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
@@ -194,15 +230,35 @@ const analyzeImport = async ({ buffer, employeeId, employeeByPedido, transaction
         continue;
       }
 
-      const perPedidoEmployeeId = employeeByPedidoMap ? toNullableId(employeeByPedidoMap[numero]) : null;
+      const resolvedKind = normalizeRevenueKind(kindByPedidoMap?.[numero]) || defaultKind;
 
-      importRows.push({
-        date,
-        description,
-        amount,
-        employee_id: perPedidoEmployeeId || employeeId || null,
-        vehicle_id: null,
-      });
+      if (resolvedKind === 'retirada') {
+        const resolvedPickupLocation = normalizePickupLocation(pickupLocationByPedidoMap?.[numero]) || defaultPickupLocation;
+        importRows.push({
+          date,
+          description,
+          amount,
+          kind: 'retirada',
+          pickup_location: resolvedPickupLocation,
+          employee_id: null,
+          vehicle_id: null,
+        });
+      } else {
+        const perPedidoEmployeeId = employeeByPedidoMap ? toNullableId(employeeByPedidoMap[numero]) : null;
+        const perPedidoVehicleId = vehicleByPedidoMap ? toNullableId(vehicleByPedidoMap[numero]) : null;
+        const resolvedEmployeeId = perPedidoEmployeeId || toNullableId(employeeId) || null;
+        const resolvedVehicleId = perPedidoVehicleId || toNullableId(vehicleId) || null;
+
+        importRows.push({
+          date,
+          description,
+          amount,
+          kind: resolvedKind === 'entrega' ? 'entrega' : null,
+          pickup_location: null,
+          employee_id: resolvedEmployeeId,
+          vehicle_id: resolvedVehicleId,
+        });
+      }
       previewRows.push({ row: i + 1, numero, description, date, amount });
       existingPedidos.add(numero);
       seenInFile.add(numero);
@@ -256,12 +312,16 @@ const analyzeImport = async ({ buffer, employeeId, employeeByPedido, transaction
         duplicateRows.push({ ...item, reason: 'Duplicado na planilha' });
         continue;
       }
+      const resolvedKind = defaultKind;
+      const resolvedPickupLocation = defaultPickupLocation;
       importRows.push({
         date: item.date,
         description: item.description,
         amount: item.amount,
-        employee_id: employeeId || null,
-        vehicle_id: null,
+        kind: resolvedKind,
+        pickup_location: resolvedKind === 'retirada' ? resolvedPickupLocation : null,
+        employee_id: resolvedKind === 'entrega' ? (toNullableId(employeeId) || null) : null,
+        vehicle_id: resolvedKind === 'entrega' ? (toNullableId(vehicleId) || null) : null,
       });
       previewRows.push(item);
       seenInFile.add(key);
@@ -377,6 +437,9 @@ exports.previewImport = async (req, res) => {
     }
 
     const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
+    const vehicleId = req.body.vehicle_id ? parseInt(req.body.vehicle_id, 10) : null;
+    const kind = req.body.kind || null;
+    const pickupLocation = req.body.pickup_location || null;
     let employeeByPedido = null;
     if (req.body.employee_by_pedido) {
       try {
@@ -388,7 +451,53 @@ exports.previewImport = async (req, res) => {
         employeeByPedido = null;
       }
     }
-    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, employeeByPedido });
+    let vehicleByPedido = null;
+    if (req.body.vehicle_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.vehicle_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          vehicleByPedido = parsed;
+        }
+      } catch (error) {
+        vehicleByPedido = null;
+      }
+    }
+
+    let kindByPedido = null;
+    if (req.body.kind_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.kind_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          kindByPedido = parsed;
+        }
+      } catch (error) {
+        kindByPedido = null;
+      }
+    }
+
+    let pickupLocationByPedido = null;
+    if (req.body.pickup_location_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.pickup_location_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          pickupLocationByPedido = parsed;
+        }
+      } catch (error) {
+        pickupLocationByPedido = null;
+      }
+    }
+
+    const result = await analyzeImport({
+      buffer: req.file.buffer,
+      employeeId,
+      employeeByPedido,
+      vehicleId,
+      vehicleByPedido,
+      kind,
+      pickupLocation,
+      kindByPedido,
+      pickupLocationByPedido,
+    });
 
     res.status(200).json({
       message: 'Pré-visualização gerada.',
@@ -416,6 +525,9 @@ exports.importRevenues = async (req, res) => {
     }
 
     const employeeId = req.body.employee_id ? parseInt(req.body.employee_id, 10) : null;
+    const vehicleId = req.body.vehicle_id ? parseInt(req.body.vehicle_id, 10) : null;
+    const kind = req.body.kind || null;
+    const pickupLocation = req.body.pickup_location || null;
     let employeeByPedido = null;
     if (req.body.employee_by_pedido) {
       try {
@@ -427,7 +539,54 @@ exports.importRevenues = async (req, res) => {
         employeeByPedido = null;
       }
     }
-    const result = await analyzeImport({ buffer: req.file.buffer, employeeId, employeeByPedido, transaction: t });
+    let vehicleByPedido = null;
+    if (req.body.vehicle_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.vehicle_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          vehicleByPedido = parsed;
+        }
+      } catch (error) {
+        vehicleByPedido = null;
+      }
+    }
+
+    let kindByPedido = null;
+    if (req.body.kind_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.kind_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          kindByPedido = parsed;
+        }
+      } catch (error) {
+        kindByPedido = null;
+      }
+    }
+
+    let pickupLocationByPedido = null;
+    if (req.body.pickup_location_by_pedido) {
+      try {
+        const parsed = JSON.parse(req.body.pickup_location_by_pedido);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          pickupLocationByPedido = parsed;
+        }
+      } catch (error) {
+        pickupLocationByPedido = null;
+      }
+    }
+
+    const result = await analyzeImport({
+      buffer: req.file.buffer,
+      employeeId,
+      employeeByPedido,
+      vehicleId,
+      vehicleByPedido,
+      kind,
+      pickupLocation,
+      kindByPedido,
+      pickupLocationByPedido,
+      transaction: t,
+    });
 
     if (result.importRows.length === 0) {
       await t.commit();
@@ -439,6 +598,92 @@ exports.importRevenues = async (req, res) => {
         skippedStatus: result.skippedStatus,
         totalRows: result.totalRows,
       });
+    }
+
+    const invalidKindCount = result.importRows.filter((row) => !['retirada', 'entrega'].includes(row.kind)).length;
+    if (invalidKindCount > 0) {
+      await t.rollback();
+      return sendError(
+        res,
+        400,
+        'Selecione o tipo da receita (Retirada/Entrega) para importar.',
+        'VALIDATION_ERROR',
+        null,
+        req
+      );
+    }
+
+    const pickupRows = result.importRows.filter((row) => row.kind === 'retirada');
+    const missingPickupLocationCount = pickupRows.filter((row) => !['areial', 'deposito'].includes(row.pickup_location)).length;
+    if (missingPickupLocationCount > 0) {
+      await t.rollback();
+      return sendError(
+        res,
+        400,
+        'Para importar retiradas, selecione o local de retirada (Areial/Depósito) para todos os itens.',
+        'VALIDATION_ERROR',
+        null,
+        req
+      );
+    }
+
+    const deliveryRows = result.importRows.filter((row) => row.kind === 'entrega');
+    const missingDriver = deliveryRows.filter((row) => !row.employee_id).length;
+    const missingVehicle = deliveryRows.filter((row) => !row.vehicle_id).length;
+    if (missingDriver > 0 || missingVehicle > 0) {
+      await t.rollback();
+      return sendError(
+        res,
+        400,
+        'Para importar entregas, selecione o motorista e o veículo para todos os itens.',
+        'VALIDATION_ERROR',
+        null,
+        req
+      );
+    }
+
+    const employeeIds = [...new Set(deliveryRows.map((row) => row.employee_id).filter(Boolean))];
+    if (employeeIds.length > 0) {
+      const employees = await Employee.findAll({
+        where: { id: employeeIds },
+        attributes: ['id', 'role'],
+        transaction: t,
+      });
+      const byId = new Map(employees.map((employee) => [employee.id, employee]));
+      const invalidDriverIds = employeeIds.filter((id) => !byId.has(id) || !isDriverRole(byId.get(id).role));
+      if (invalidDriverIds.length > 0) {
+        await t.rollback();
+        return sendError(
+          res,
+          400,
+          'Um ou mais funcionários selecionados não possuem cargo de motorista.',
+          'VALIDATION_ERROR',
+          null,
+          req
+        );
+      }
+    }
+
+    const vehicleIds = [...new Set(deliveryRows.map((row) => row.vehicle_id).filter(Boolean))];
+    if (vehicleIds.length > 0) {
+      const vehicles = await Vehicle.findAll({
+        where: { id: vehicleIds },
+        attributes: ['id'],
+        transaction: t,
+      });
+      const foundVehicleIds = new Set(vehicles.map((vehicle) => vehicle.id));
+      const missingVehicleIds = vehicleIds.filter((id) => !foundVehicleIds.has(id));
+      if (missingVehicleIds.length > 0) {
+        await t.rollback();
+        return sendError(
+          res,
+          400,
+          'Um ou mais veículos selecionados não existem.',
+          'VALIDATION_ERROR',
+          null,
+          req
+        );
+      }
     }
 
     await Revenue.bulkCreate(result.importRows, { transaction: t });
@@ -461,15 +706,77 @@ exports.importRevenues = async (req, res) => {
 // Criar uma nova receita manualmente
 exports.create = async (req, res) => {
   try {
-    const { date, description, amount, vehicle_id, employee_id } = req.body;
-    const revenueData = {
+    const {
       date,
       description,
       amount,
-      vehicle_id: vehicle_id || null,
-      employee_id: employee_id || null
-    };
-    const newRevenue = await Revenue.create(revenueData);
+      kind: kindRaw,
+      pickup_location: pickupLocationRaw,
+      vehicle_id: vehicleIdRaw,
+      employee_id: employeeIdRaw,
+    } = req.body;
+
+    if (!date || !description || amount === null || amount === undefined || amount === '') {
+      return sendError(res, 400, 'Data, descrição e valor são obrigatórios.', 'VALIDATION_ERROR', null, req);
+    }
+
+    const kind = kindRaw === null || kindRaw === undefined || kindRaw === '' ? null : normalizeText(kindRaw);
+    if (!kind || !['retirada', 'entrega'].includes(kind)) {
+      return sendError(res, 400, 'Selecione o tipo da receita (Retirada/Entrega).', 'VALIDATION_ERROR', null, req);
+    }
+
+    if (kind === 'retirada') {
+      const pickupLocation = pickupLocationRaw === null || pickupLocationRaw === undefined || pickupLocationRaw === ''
+        ? null
+        : normalizeText(pickupLocationRaw);
+      if (!pickupLocation || !['areial', 'deposito'].includes(pickupLocation)) {
+        return sendError(res, 400, 'Selecione o local de retirada (Areial/Depósito).', 'VALIDATION_ERROR', null, req);
+      }
+
+      const newRevenue = await Revenue.create({
+        date,
+        description,
+        amount,
+        kind: 'retirada',
+        pickup_location: pickupLocation,
+        employee_id: null,
+        vehicle_id: null,
+      });
+      return res.status(201).json(newRevenue);
+    }
+
+    const employeeId = toNullableId(employeeIdRaw);
+    const vehicleId = toNullableId(vehicleIdRaw);
+
+    if (!employeeId) {
+      return sendError(res, 400, 'Selecione um motorista.', 'VALIDATION_ERROR', null, req);
+    }
+    if (!vehicleId) {
+      return sendError(res, 400, 'Selecione um veículo/caminhão.', 'VALIDATION_ERROR', null, req);
+    }
+
+    const employee = await Employee.findByPk(employeeId);
+    if (!employee) {
+      return sendError(res, 400, 'Motorista não encontrado.', 'VALIDATION_ERROR', null, req);
+    }
+    if (!isDriverRole(employee.role)) {
+      return sendError(res, 400, 'O funcionário selecionado precisa ter cargo de motorista.', 'VALIDATION_ERROR', null, req);
+    }
+
+    const vehicle = await Vehicle.findByPk(vehicleId);
+    if (!vehicle) {
+      return sendError(res, 400, 'Veículo não encontrado.', 'VALIDATION_ERROR', null, req);
+    }
+
+    const newRevenue = await Revenue.create({
+      date,
+      description,
+      amount,
+      kind: 'entrega',
+      pickup_location: null,
+      employee_id: employeeId,
+      vehicle_id: vehicleId,
+    });
     res.status(201).json(newRevenue);
   } catch (error) {
     sendError(res, 500, 'Erro ao criar receita.', 'INTERNAL_ERROR', error, req);
@@ -480,25 +787,80 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
-    const toNullableId = (value) => {
-      if (value === null || value === undefined || value === '') return null;
-      const parsed = parseInt(value, 10);
-      if (Number.isNaN(parsed) || parsed <= 0) return null;
-      return parsed;
-    };
 
-    const { date, description, amount, vehicle_id, employee_id } = req.body;
+    const existing = await Revenue.findByPk(id);
+    if (!existing) return sendError(res, 404, 'Receita não encontrada.', 'NOT_FOUND', null, req);
+
+    const {
+      date,
+      description,
+      amount,
+      kind: kindRaw,
+      pickup_location: pickupLocationRaw,
+      vehicle_id: vehicleIdRaw,
+      employee_id: employeeIdRaw,
+    } = req.body;
+
+    const kind = kindRaw === undefined
+      ? undefined
+      : (kindRaw === null || kindRaw === '' ? null : normalizeText(kindRaw));
+
+    const pickupLocation = pickupLocationRaw === undefined
+      ? undefined
+      : (pickupLocationRaw === null || pickupLocationRaw === '' ? null : normalizeText(pickupLocationRaw));
+
     const updateData = {
       ...(date !== undefined ? { date } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(amount !== undefined ? { amount } : {}),
-      ...(vehicle_id !== undefined ? { vehicle_id: toNullableId(vehicle_id) } : {}),
-      ...(employee_id !== undefined ? { employee_id: toNullableId(employee_id) } : {}),
+      ...(vehicleIdRaw !== undefined ? { vehicle_id: toNullableId(vehicleIdRaw) } : {}),
+      ...(employeeIdRaw !== undefined ? { employee_id: toNullableId(employeeIdRaw) } : {}),
+      ...(kind !== undefined ? { kind } : {}),
+      ...(pickupLocation !== undefined ? { pickup_location: pickupLocation } : {}),
     };
+
+    const finalKind = updateData.kind !== undefined ? updateData.kind : existing.kind;
+    const finalEmployeeId = updateData.employee_id !== undefined ? updateData.employee_id : existing.employee_id;
+    const finalVehicleId = updateData.vehicle_id !== undefined ? updateData.vehicle_id : existing.vehicle_id;
+    const finalPickupLocation = updateData.pickup_location !== undefined ? updateData.pickup_location : existing.pickup_location;
+
+    if (!finalKind || !['retirada', 'entrega'].includes(finalKind)) {
+      return sendError(res, 400, 'Selecione o tipo da receita (Retirada/Entrega).', 'VALIDATION_ERROR', null, req);
+    }
+
+    if (finalKind === 'entrega') {
+      if (!finalEmployeeId) {
+        return sendError(res, 400, 'Selecione um motorista.', 'VALIDATION_ERROR', null, req);
+      }
+      if (!finalVehicleId) {
+        return sendError(res, 400, 'Selecione um veículo/caminhão.', 'VALIDATION_ERROR', null, req);
+      }
+
+      const employee = await Employee.findByPk(finalEmployeeId);
+      if (!employee) {
+        return sendError(res, 400, 'Motorista não encontrado.', 'VALIDATION_ERROR', null, req);
+      }
+      if (!isDriverRole(employee.role)) {
+        return sendError(res, 400, 'O funcionário selecionado precisa ter cargo de motorista.', 'VALIDATION_ERROR', null, req);
+      }
+
+      const vehicle = await Vehicle.findByPk(finalVehicleId);
+      if (!vehicle) {
+        return sendError(res, 400, 'Veículo não encontrado.', 'VALIDATION_ERROR', null, req);
+      }
+
+      updateData.pickup_location = null;
+    } else {
+      if (!finalPickupLocation || !['areial', 'deposito'].includes(finalPickupLocation)) {
+        return sendError(res, 400, 'Selecione o local de retirada (Areial/Depósito).', 'VALIDATION_ERROR', null, req);
+      }
+      updateData.employee_id = null;
+      updateData.vehicle_id = null;
+    }
 
     const [updated] = await Revenue.update(updateData, { where: { id: id } });
     if (!updated) return sendError(res, 404, 'Receita não encontrada.', 'NOT_FOUND', null, req);
-    const updatedRevenue = await Revenue.findByPk(id);
+    const updatedRevenue = await Revenue.findByPk(id, { include: [Employee, Vehicle] });
     res.status(200).json(updatedRevenue);
   } catch (error) {
     sendError(res, 500, 'Erro ao atualizar receita.', 'INTERNAL_ERROR', error, req);

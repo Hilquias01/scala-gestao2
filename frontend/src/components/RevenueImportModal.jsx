@@ -10,6 +10,13 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState('');
   const [employeeByPedido, setEmployeeByPedido] = useState({});
+  const [vehicles, setVehicles] = useState([]);
+  const [vehicleId, setVehicleId] = useState('');
+  const [vehicleByPedido, setVehicleByPedido] = useState({});
+  const [kind, setKind] = useState('entrega');
+  const [kindByPedido, setKindByPedido] = useState({});
+  const [pickupLocation, setPickupLocation] = useState('deposito');
+  const [pickupLocationByPedido, setPickupLocationByPedido] = useState({});
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -21,21 +28,31 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
     if (!isOpen) return;
     setEmployeeId('');
     setEmployeeByPedido({});
+    setVehicleId('');
+    setVehicleByPedido({});
+    setKind('entrega');
+    setKindByPedido({});
+    setPickupLocation('deposito');
+    setPickupLocationByPedido({});
     setFile(null);
     setError('');
     setPreview(null);
     setActiveTab('import');
 
-    const fetchEmployees = async () => {
+    const fetchData = async () => {
       try {
-        const { data } = await api.get('/employees');
-        setEmployees(data);
+        const [employeesRes, vehiclesRes] = await Promise.all([
+          api.get('/employees'),
+          api.get('/vehicles'),
+        ]);
+        setEmployees(employeesRes.data);
+        setVehicles(vehiclesRes.data);
       } catch (err) {
         console.error('Falha ao carregar funcionários', err);
         setError('Falha ao carregar a lista de funcionários.');
       }
     };
-    fetchEmployees();
+    fetchData();
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -67,8 +84,27 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('kind', kind);
     if (employeeId) {
       formData.append('employee_id', employeeId);
+    }
+    if (vehicleId) {
+      formData.append('vehicle_id', vehicleId);
+    }
+    if (pickupLocation) {
+      formData.append('pickup_location', pickupLocation);
+    }
+    if (Object.keys(employeeByPedido).length > 0) {
+      formData.append('employee_by_pedido', JSON.stringify(employeeByPedido));
+    }
+    if (Object.keys(vehicleByPedido).length > 0) {
+      formData.append('vehicle_by_pedido', JSON.stringify(vehicleByPedido));
+    }
+    if (Object.keys(kindByPedido).length > 0) {
+      formData.append('kind_by_pedido', JSON.stringify(kindByPedido));
+    }
+    if (Object.keys(pickupLocationByPedido).length > 0) {
+      formData.append('pickup_location_by_pedido', JSON.stringify(pickupLocationByPedido));
     }
 
     try {
@@ -100,13 +136,41 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
       return;
     }
 
+    if (!kind) {
+      setError('Selecione o tipo da receita (Retirada/Entrega).');
+      return;
+    }
+    if (kind === 'retirada' && !pickupLocation) {
+      setError('Selecione o local de retirada (Areial/Depósito).');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('kind', kind);
     if (employeeId) {
       formData.append('employee_id', employeeId);
     }
-    if (preview?.format === 'pedidos_venda' && Object.keys(employeeByPedido).length > 0) {
-      formData.append('employee_by_pedido', JSON.stringify(employeeByPedido));
+    if (vehicleId) {
+      formData.append('vehicle_id', vehicleId);
+    }
+    if (pickupLocation) {
+      formData.append('pickup_location', pickupLocation);
+    }
+
+    if (preview?.format === 'pedidos_venda') {
+      if (Object.keys(employeeByPedido).length > 0) {
+        formData.append('employee_by_pedido', JSON.stringify(employeeByPedido));
+      }
+      if (Object.keys(vehicleByPedido).length > 0) {
+        formData.append('vehicle_by_pedido', JSON.stringify(vehicleByPedido));
+      }
+      if (Object.keys(kindByPedido).length > 0) {
+        formData.append('kind_by_pedido', JSON.stringify(kindByPedido));
+      }
+      if (Object.keys(pickupLocationByPedido).length > 0) {
+        formData.append('pickup_location_by_pedido', JSON.stringify(pickupLocationByPedido));
+      }
     }
 
     try {
@@ -139,6 +203,23 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
   const driverEmployees = activeEmployees.filter(isDriver);
   const employeeOptions = driverEmployees.length > 0 ? driverEmployees : activeEmployees;
 
+  const normalizeKind = (value) => {
+    const normalized = normalizeText(value);
+    if (normalized === 'entrega' || normalized === 'retirada') return normalized;
+    return '';
+  };
+
+  const normalizePickupLocation = (value) => {
+    const normalized = normalizeText(value);
+    if (normalized === 'areial' || normalized === 'deposito') return normalized;
+    return '';
+  };
+
+  const resolveKind = (numero) => normalizeKind(kindByPedido[String(numero || '')]) || normalizeKind(kind) || '';
+  const resolvePickupLocation = (numero) => normalizePickupLocation(pickupLocationByPedido[String(numero || '')])
+    || normalizePickupLocation(pickupLocation)
+    || '';
+
   const applyDefaultDriverToEmpty = () => {
     if (!employeeId || preview?.format !== 'pedidos_venda') return;
     setEmployeeByPedido((prev) => {
@@ -146,10 +227,80 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
       previewRows.forEach((row) => {
         if (!row?.numero) return;
         const key = String(row.numero);
+        if (resolveKind(row.numero) !== 'entrega') return;
         if (!next[key]) next[key] = String(employeeId);
       });
       return next;
     });
+  };
+
+  const sortedVehicles = [...vehicles].sort((a, b) => String(a?.plate || '').localeCompare(String(b?.plate || '')));
+  const vehicleOptions = sortedVehicles;
+
+  const applyDefaultVehicleToEmpty = () => {
+    if (!vehicleId || preview?.format !== 'pedidos_venda') return;
+    setVehicleByPedido((prev) => {
+      const next = { ...prev };
+      previewRows.forEach((row) => {
+        if (!row?.numero) return;
+        const key = String(row.numero);
+        if (resolveKind(row.numero) !== 'entrega') return;
+        if (!next[key]) next[key] = String(vehicleId);
+      });
+      return next;
+    });
+  };
+
+  const resolveDriverId = (numero) => employeeByPedido[String(numero || '')] || employeeId || '';
+  const resolveVehicleId = (numero) => vehicleByPedido[String(numero || '')] || vehicleId || '';
+
+  const requiresAssignments = preview?.format === 'pedidos_venda';
+  const missingKindCount = requiresAssignments
+    ? previewRows.filter((row) => row?.numero && !resolveKind(row.numero)).length
+    : (!normalizeKind(kind) ? 1 : 0);
+  const missingPickupLocationCount = requiresAssignments
+    ? previewRows.filter((row) => row?.numero && resolveKind(row.numero) === 'retirada' && !resolvePickupLocation(row.numero)).length
+    : (normalizeKind(kind) === 'retirada' && !normalizePickupLocation(pickupLocation) ? 1 : 0);
+  const missingDriverCount = requiresAssignments
+    ? previewRows.filter((row) => row?.numero && resolveKind(row.numero) === 'entrega' && !resolveDriverId(row.numero)).length
+    : (normalizeKind(kind) === 'entrega' && !employeeId ? 1 : 0);
+  const missingVehicleCount = requiresAssignments
+    ? previewRows.filter((row) => row?.numero && resolveKind(row.numero) === 'entrega' && !resolveVehicleId(row.numero)).length
+    : (normalizeKind(kind) === 'entrega' && !vehicleId ? 1 : 0);
+
+  const disableImport = loading
+    || !preview
+    || (preview?.importCount ?? 0) === 0
+    || missingKindCount > 0
+    || missingPickupLocationCount > 0
+    || missingDriverCount > 0
+    || missingVehicleCount > 0;
+
+  const missingMessage = () => {
+    if (!preview) return '';
+
+    const hasMissing = missingKindCount > 0 || missingPickupLocationCount > 0 || missingDriverCount > 0 || missingVehicleCount > 0;
+    if (!hasMissing) return '';
+
+    if (preview?.format !== 'pedidos_venda') {
+      if (normalizeKind(kind) === 'retirada' && missingPickupLocationCount > 0) {
+        return 'Para importar retiradas, selecione o local de retirada.';
+      }
+      if (normalizeKind(kind) === 'entrega' && (missingDriverCount > 0 || missingVehicleCount > 0)) {
+        return 'Para importar entregas, selecione o motorista e o veículo.';
+      }
+      return 'Para importar, selecione o tipo da receita.';
+    }
+
+    const parts = [];
+    if (missingKindCount > 0) parts.push(`tipo em ${missingKindCount} pedido(s)`);
+    if (missingPickupLocationCount > 0) parts.push(`local de retirada em ${missingPickupLocationCount} pedido(s)`);
+    if (missingDriverCount > 0) parts.push(`motorista em ${missingDriverCount} pedido(s)`);
+    if (missingVehicleCount > 0) parts.push(`veículo em ${missingVehicleCount} pedido(s)`);
+
+    if (parts.length === 1) return `Para importar, falta ${parts[0]}.`;
+    if (parts.length === 2) return `Para importar, falta ${parts[0]} e ${parts[1]}.`;
+    return `Para importar, falta ${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}.`;
   };
 
   return (
@@ -157,11 +308,25 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
       <div style={modalStyles.content} onClick={(e) => e.stopPropagation()}>
         <h2 className="form-title">Importar Planilha de Receitas</h2>
         <p style={{ color: '#6c757d', marginTop: 0 }}>
-          Selecione o arquivo do outro sistema. O motorista é opcional (pode ser definido por pedido na pré-visualização).
+          Selecione o arquivo do outro sistema e informe o tipo (Entrega/Retirada). Para Pedidos de Venda, você pode ajustar tipo/motorista/veículo/local por pedido na pré-visualização.
         </p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Motorista Padrão (Opcional)</label>
+            <label>Tipo da Receita</label>
+            <select value={kind} onChange={(e) => setKind(e.target.value)} required>
+              <option value="entrega">Entrega</option>
+              <option value="retirada">Retirada</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Local de Retirada Padrão (para retiradas)</label>
+            <select value={pickupLocation} onChange={(e) => setPickupLocation(e.target.value)}>
+              <option value="areial">Areial</option>
+              <option value="deposito">Depósito</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Motorista Padrão (para entregas)</label>
             <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
               <option value="">Nenhum</option>
               {employeeOptions.map((emp) => (
@@ -182,6 +347,27 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
             )}
           </div>
           <div className="form-group">
+            <label>Veículo Padrão (para entregas)</label>
+            <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
+              <option value="">Nenhum</option>
+              {vehicleOptions.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} - {vehicle.model}</option>
+              ))}
+            </select>
+            {preview?.format === 'pedidos_venda' && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={applyDefaultVehicleToEmpty}
+                  disabled={!vehicleId || previewRows.length === 0}
+                  style={{ background: 'none', border: 'none', color: '#0f6ab4', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  Aplicar veículo padrão nos pedidos sem veículo
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="form-group">
             <label>Arquivo</label>
             <input
               type="file"
@@ -190,6 +376,9 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                 setFile(e.target.files?.[0] || null);
                 setPreview(null);
                 setEmployeeByPedido({});
+                setVehicleByPedido({});
+                setKindByPedido({});
+                setPickupLocationByPedido({});
               }}
               required
             />
@@ -207,6 +396,11 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
               {preview.duplicateCount > 0 && (
                 <p style={{ color: '#b45309', marginTop: '0.75rem' }}>
                   Aviso: existem duplicados. Eles serão ignorados na importação.
+                </p>
+              )}
+              {missingMessage() && (
+                <p style={{ color: '#b91c1c', marginTop: '0.75rem' }}>
+                  {missingMessage()}
                 </p>
               )}
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
@@ -234,7 +428,10 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                       <th>Descrição</th>
                       <th>Data</th>
                       <th>Valor</th>
+                      {activeTab === 'import' && preview?.format === 'pedidos_venda' && <th>Tipo</th>}
+                      {activeTab === 'import' && preview?.format === 'pedidos_venda' && <th>Local</th>}
                       {activeTab === 'import' && preview?.format === 'pedidos_venda' && <th>Motorista</th>}
+                      {activeTab === 'import' && preview?.format === 'pedidos_venda' && <th>Veículo</th>}
                       {activeTab === 'duplicates' && <th>Motivo</th>}
                     </tr>
                   </thead>
@@ -249,11 +446,11 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                         {activeTab === 'import' && preview?.format === 'pedidos_venda' && (
                           <td>
                             <select
-                              value={employeeByPedido[String(row.numero || '')] || ''}
+                              value={kindByPedido[String(row.numero || '')] || ''}
                               onChange={(e) => {
                                 const pedido = String(row.numero || '');
                                 const value = e.target.value;
-                                setEmployeeByPedido((prev) => {
+                                setKindByPedido((prev) => {
                                   const next = { ...prev };
                                   if (!pedido) return next;
                                   if (!value) {
@@ -267,10 +464,101 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                               disabled={!row.numero}
                             >
                               <option value="">(usar padrão)</option>
-                              {employeeOptions.map((emp) => (
-                                <option key={emp.id} value={emp.id}>{emp.name}</option>
-                              ))}
+                              <option value="entrega">Entrega</option>
+                              <option value="retirada">Retirada</option>
                             </select>
+                          </td>
+                        )}
+                        {activeTab === 'import' && preview?.format === 'pedidos_venda' && (
+                          <td>
+                            {resolveKind(row.numero) === 'retirada' ? (
+                              <select
+                                value={pickupLocationByPedido[String(row.numero || '')] || ''}
+                                onChange={(e) => {
+                                  const pedido = String(row.numero || '');
+                                  const value = e.target.value;
+                                  setPickupLocationByPedido((prev) => {
+                                    const next = { ...prev };
+                                    if (!pedido) return next;
+                                    if (!value) {
+                                      delete next[pedido];
+                                    } else {
+                                      next[pedido] = value;
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                disabled={!row.numero}
+                              >
+                                <option value="">(usar padrão)</option>
+                                <option value="areial">Areial</option>
+                                <option value="deposito">Depósito</option>
+                              </select>
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </td>
+                        )}
+                        {activeTab === 'import' && preview?.format === 'pedidos_venda' && (
+                          <td>
+                            {resolveKind(row.numero) === 'entrega' ? (
+                              <select
+                                value={employeeByPedido[String(row.numero || '')] || ''}
+                                onChange={(e) => {
+                                  const pedido = String(row.numero || '');
+                                  const value = e.target.value;
+                                  setEmployeeByPedido((prev) => {
+                                    const next = { ...prev };
+                                    if (!pedido) return next;
+                                    if (!value) {
+                                      delete next[pedido];
+                                    } else {
+                                      next[pedido] = value;
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                disabled={!row.numero}
+                              >
+                                <option value="">(usar padrão)</option>
+                                {employeeOptions.map((emp) => (
+                                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </td>
+                        )}
+                        {activeTab === 'import' && preview?.format === 'pedidos_venda' && (
+                          <td>
+                            {resolveKind(row.numero) === 'entrega' ? (
+                              <select
+                                value={vehicleByPedido[String(row.numero || '')] || ''}
+                                onChange={(e) => {
+                                  const pedido = String(row.numero || '');
+                                  const value = e.target.value;
+                                  setVehicleByPedido((prev) => {
+                                    const next = { ...prev };
+                                    if (!pedido) return next;
+                                    if (!value) {
+                                      delete next[pedido];
+                                    } else {
+                                      next[pedido] = value;
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                disabled={!row.numero}
+                              >
+                                <option value="">(usar padrão)</option>
+                                {vehicleOptions.map((vehicle) => (
+                                  <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} - {vehicle.model}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span>-</span>
+                            )}
                           </td>
                         )}
                         {activeTab === 'duplicates' && <td>{row.reason || '-'}</td>}
@@ -281,7 +569,7 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
                         <td colSpan={
                           activeTab === 'duplicates'
                             ? (preview?.format === 'pedidos_venda' ? 6 : 5)
-                            : (preview?.format === 'pedidos_venda' ? 6 : 4)
+                            : (preview?.format === 'pedidos_venda' ? 9 : 4)
                         } style={{ textAlign: 'center', padding: '1rem' }}>
                           Nenhum item para exibir.
                         </td>
@@ -300,7 +588,7 @@ const RevenueImportModal = ({ isOpen, onClose, onImported }) => {
             <button type="button" className="btn" style={{ backgroundColor: '#0f6ab4' }} onClick={handlePreview} disabled={previewLoading || loading}>
               {previewLoading ? 'Pré-visualizando...' : 'Pré-visualizar'}
             </button>
-            <button type="submit" className="btn" disabled={loading || !preview || (preview?.importCount ?? 0) === 0}>
+            <button type="submit" className="btn" disabled={disableImport}>
               {loading ? 'Importando...' : 'Importar'}
             </button>
           </div>

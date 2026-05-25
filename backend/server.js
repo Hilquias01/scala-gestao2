@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./src/models'); // Importa a instância do Sequelize
 const { sendError } = require('./src/utils/response');
+const ensureRevenueSchema = require('./src/utils/ensureRevenueSchema');
 
 const app = express();
 
@@ -48,6 +49,9 @@ async function startServer() {
     // Modo seguro para operação diária.
     await db.sequelize.sync({ force: false });
     console.log('✅ Todos os modelos foram sincronizados com sucesso.');
+
+    await ensureRevenueSchema(db.sequelize, db.Sequelize);
+    console.log('✅ Esquema de receitas verificado com sucesso.');
 
     app.listen(PORT, () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
