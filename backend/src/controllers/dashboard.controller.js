@@ -150,8 +150,8 @@ exports.getSpendingByCategory = async (req, res) => {
     const salaryTotal = await EmployeeSalary.sum('amount', {
       where: { period: { [Op.between]: [String(start).slice(0, 7), String(end).slice(0, 7)] } },
     });
-    const data = [refuelingTotal || 0, maintenanceTotal || 0, (generalExpenseTotal || 0) + (salaryTotal || 0)];
-    const labels = ['Abastecimentos', 'Manutenções', 'Despesas Gerais (incl. salários)'];
+    const data = [refuelingTotal || 0, maintenanceTotal || 0, generalExpenseTotal || 0, salaryTotal || 0];
+    const labels = ['Abastecimentos', 'Manutenções', 'Despesas Gerais', 'Salários'];
     res.json({ labels, data });
   } catch (error) { 
     sendError(res, 500, 'Erro ao buscar dados do gráfico.', 'INTERNAL_ERROR', error, req);

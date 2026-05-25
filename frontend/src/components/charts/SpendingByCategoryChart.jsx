@@ -23,8 +23,8 @@ const SpendingByCategoryChart = ({ dateRange }) => {
             {
               label: 'Custo em R$',
               data: data.data,
-              backgroundColor: ['rgba(42, 65, 97, 0.8)', 'rgba(212, 160, 23, 0.8)', 'rgba(108, 117, 125, 0.8)'],
-              borderColor: ['rgb(42, 65, 97)', 'rgb(212, 160, 23)', 'rgb(108, 117, 125)'],
+              backgroundColor: ['rgba(42, 65, 97, 0.8)', 'rgba(212, 160, 23, 0.8)', 'rgba(108, 117, 125, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+              borderColor: ['rgb(42, 65, 97)', 'rgb(212, 160, 23)', 'rgb(108, 117, 125)', 'rgb(220, 53, 69)'],
               borderWidth: 1,
             },
           ],
