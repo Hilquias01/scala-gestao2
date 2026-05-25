@@ -11,7 +11,7 @@ router.use(authMiddleware);
 router.post('/', requireRole('administrador'), maintenanceController.create);
 
 // Rota para buscar todas as manutenções de um veículo
-router.get('/vehicle/:vehicleId', maintenanceController.findAllByVehicle);
+router.get('/vehicle/:vehicleId', requireRole('administrador'), maintenanceController.findAllByVehicle);
 
 router.put('/:id', requireRole('administrador'), maintenanceController.update);
 router.delete('/:id', requireRole('administrador'), maintenanceController.delete);

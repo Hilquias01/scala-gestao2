@@ -21,11 +21,15 @@ module.exports = (sequelize) => {
     },
     employee_id: {
       type: DataTypes.INTEGER,
-      allowNull: true, // Opcional
+      allowNull: true,
+      references: { model: 'employees', key: 'id' },
+      comment: 'Obrigatório quando kind=entrega',
     },
     vehicle_id: {
       type: DataTypes.INTEGER,
-      allowNull: true, // A associação com um veículo é opcional
+      allowNull: true,
+      references: { model: 'vehicles', key: 'id' },
+      comment: 'Obrigatório quando kind=entrega',
     },
     kind: {
       type: DataTypes.ENUM('retirada', 'entrega'),

@@ -1,7 +1,7 @@
-const { Vehicle, Employee, EmployeeSalary, Refueling, Maintenance, GeneralExpense, Revenue } = require('../models');
+const { Vehicle, Employee, EmployeeSalary, Refueling, Maintenance, GeneralExpense, Revenue, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { subMonths, format, startOfMonth, endOfMonth, addMonths, parseISO } = require('date-fns');
-const { sendError } = require('../utils/response');
+const { sendError, toNumber } = require('../utils/response');
 
 // This helper function now works with date strings, avoiding timezone issues.
 const getPeriod = (req) => {
@@ -40,10 +40,10 @@ exports.getKpis = async (req, res) => {
     res.json({
       totalVehicles,
       totalEmployees,
-      totalMonthCost: parseFloat(totalMonthCost).toFixed(2),
-      totalMonthRevenue: parseFloat(totalRevenue || 0).toFixed(2),
-      netResult: parseFloat(netResult).toFixed(2),
-      margin,
+      totalMonthCost: toNumber(totalMonthCost),
+      totalMonthRevenue: toNumber(totalRevenue || 0),
+      netResult: toNumber(netResult),
+      margin: toNumber(margin),
     });
   } catch (error) { 
     sendError(res, 500, 'Erro ao buscar KPIs.', 'INTERNAL_ERROR', error, req);
@@ -162,17 +162,41 @@ exports.getSpendingByCategory = async (req, res) => {
 exports.getCostsPerVehicle = async (req, res) => {
   try {
     const { start, end } = getPeriod(req);
-    const vehicles = await Vehicle.findAll({ where: { status: 'ativo' } });
-    const labels = [];
-    const refuelingData = [];
-    const maintenanceData = [];
-    for (const vehicle of vehicles) {
-      labels.push(vehicle.plate);
-      const refueling = await Refueling.sum('total_cost', { where: { vehicle_id: vehicle.id, date: { [Op.between]: [start, end] } } });
-      const maintenance = await Maintenance.sum('cost', { where: { vehicle_id: vehicle.id, date: { [Op.between]: [start, end] } } });
-      refuelingData.push(refueling || 0);
-      maintenanceData.push(maintenance || 0);
-    }
+    
+    // Otimização: usar agregação SQL em vez de loop de queries
+    const vehicles = await Vehicle.findAll({
+      where: { status: 'ativo' },
+      attributes: ['id', 'plate'],
+      raw: true,
+    });
+
+    const refuelingByVehicle = await Refueling.findAll({
+      attributes: [
+        'vehicle_id',
+        [sequelize.fn('SUM', sequelize.col('total_cost')), 'total'],
+      ],
+      where: { date: { [Op.between]: [start, end] } },
+      group: ['vehicle_id'],
+      raw: true,
+    });
+
+    const maintenanceByVehicle = await Maintenance.findAll({
+      attributes: [
+        'vehicle_id',
+        [sequelize.fn('SUM', sequelize.col('cost')), 'total'],
+      ],
+      where: { date: { [Op.between]: [start, end] } },
+      group: ['vehicle_id'],
+      raw: true,
+    });
+
+    const refuelingMap = Object.fromEntries(refuelingByVehicle.map(r => [r.vehicle_id, toNumber(r.total)]));
+    const maintenanceMap = Object.fromEntries(maintenanceByVehicle.map(m => [m.vehicle_id, toNumber(m.total)]));
+
+    const labels = vehicles.map(v => v.plate);
+    const refuelingData = vehicles.map(v => refuelingMap[v.id] || 0);
+    const maintenanceData = vehicles.map(v => maintenanceMap[v.id] || 0);
+
     res.json({ labels, refuelingData, maintenanceData });
   } catch (error) { 
     sendError(res, 500, 'Erro ao buscar custos por veículo.', 'INTERNAL_ERROR', error, req);
@@ -183,19 +207,30 @@ exports.getCostsPerVehicle = async (req, res) => {
 exports.getTop5ExpensiveVehicles = async (req, res) => {
   try {
     const { start, end } = getPeriod(req);
-    const vehicles = await Vehicle.findAll();
-    const vehicleCosts = [];
-    for (const vehicle of vehicles) {
-      const refueling = await Refueling.sum('total_cost', { where: { vehicle_id: vehicle.id, date: { [Op.between]: [start, end] } } });
-      const maintenance = await Maintenance.sum('cost', { where: { vehicle_id: vehicle.id, date: { [Op.between]: [start, end] } } });
-      const totalCost = (refueling || 0) + (maintenance || 0);
-      if (totalCost > 0) {
-        vehicleCosts.push({ plate: vehicle.plate, totalCost });
-      }
-    }
-    const top5 = vehicleCosts.sort((a, b) => b.totalCost - a.totalCost).slice(0, 5);
-    const labels = top5.map(v => v.plate);
-    const data = top5.map(v => v.totalCost);
+    
+    // Otimização: usar agregação SQL em vez de loop
+    const results = await sequelize.query(`
+      SELECT 
+        v.id,
+        v.plate,
+        COALESCE(SUM(r.total_cost), 0) as refueling_total,
+        COALESCE(SUM(m.cost), 0) as maintenance_total,
+        COALESCE(SUM(r.total_cost), 0) + COALESCE(SUM(m.cost), 0) as total_cost
+      FROM vehicles v
+      LEFT JOIN refuelings r ON v.id = r.vehicle_id AND r.date BETWEEN :start AND :end
+      LEFT JOIN maintenance m ON v.id = m.vehicle_id AND m.date BETWEEN :start AND :end
+      GROUP BY v.id, v.plate
+      HAVING total_cost > 0
+      ORDER BY total_cost DESC
+      LIMIT 5
+    `, {
+      replacements: { start, end },
+      type: sequelize.QueryTypes.SELECT,
+    });
+
+    const labels = results.map(r => r.plate);
+    const data = results.map(r => toNumber(r.total_cost));
+    
     res.json({ labels, data });
   } catch (error) { 
     sendError(res, 500, 'Erro ao buscar top 5 veículos.', 'INTERNAL_ERROR', error, req);

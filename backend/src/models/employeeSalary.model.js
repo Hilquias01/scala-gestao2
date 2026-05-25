@@ -14,6 +14,12 @@ module.exports = (sequelize) => {
     period: {
       type: DataTypes.STRING(7), // YYYY-MM
       allowNull: false,
+      validate: {
+        is: {
+          args: /^\d{4}-\d{2}$/,
+          msg: 'Período deve estar no formato YYYY-MM',
+        },
+      },
     },
     amount: {
       type: DataTypes.DECIMAL(10, 2),
